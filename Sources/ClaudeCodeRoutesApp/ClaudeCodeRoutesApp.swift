@@ -24,30 +24,44 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     NSApp.setActivationPolicy(.accessory)
     installSignalHandlers()
 
-    let runtime = makeRuntime()
-    self.runtime = runtime
+    let statusMessage: String
+    let healthy: Bool
 
-    do {
-      try runtime.start()
-    } catch {
-      NSLog("ClaudeCodeRoutes: failed to start stub proxy: \(error.localizedDescription)")
+    if let helperURL = resolveStubHelperURL() {
+      let runtime = ProxyRuntime(
+        executableURL: helperURL,
+        arguments: [],
+        runner: FoundationProcessRunner()
+      )
+      self.runtime = runtime
+
+      do {
+        try runtime.start()
+        healthy = runtime.isHealthy
+        statusMessage = healthy ? "Proxy: running (stub)" : "Proxy: failed to start"
+      } catch {
+        healthy = false
+        statusMessage = "Proxy: failed to start"
+        NSLog("ClaudeCodeRoutes: failed to start stub proxy: \(error.localizedDescription)")
+        presentAlert(
+          title: "Couldn’t start stub proxy",
+          message: error.localizedDescription
+        )
+      }
+    } else {
+      healthy = false
+      statusMessage = "Proxy: stub helper missing"
+      presentAlert(
+        title: "Stub proxy helper not found",
+        message: """
+        StubProxyHelper was not found next to ClaudeCodeRoutes.
+
+        Run `swift build` so both products land in `.build/.../debug/`, then launch the built ClaudeCodeRoutes binary again.
+        """
+      )
     }
 
-    let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-    if let button = item.button {
-      button.title = runtime.isHealthy ? "CCR ●" : "CCR ○"
-      button.toolTip = "Claude Code Routes"
-    }
-
-    let menu = NSMenu()
-    let statusTitle = runtime.isHealthy ? "Proxy: running (stub)" : "Proxy: stopped"
-    menu.addItem(NSMenuItem(title: statusTitle, action: nil, keyEquivalent: ""))
-    menu.addItem(NSMenuItem.separator())
-    menu.addItem(
-      NSMenuItem(title: "Quit Claude Code Routes", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
-    )
-    item.menu = menu
-    statusItem = item
+    installStatusItem(healthy: healthy, statusMessage: statusMessage)
   }
 
   func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
@@ -64,6 +78,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     runtime = nil
   }
 
+  private func installStatusItem(healthy: Bool, statusMessage: String) {
+    let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
+    if let button = item.button {
+      button.title = healthy ? "CCR ●" : "CCR ○"
+      button.toolTip = "Claude Code Routes"
+    }
+
+    let menu = NSMenu()
+    menu.addItem(NSMenuItem(title: statusMessage, action: nil, keyEquivalent: ""))
+    menu.addItem(NSMenuItem.separator())
+    menu.addItem(
+      NSMenuItem(title: "Quit Claude Code Routes", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+    )
+    item.menu = menu
+    statusItem = item
+  }
+
+  private func presentAlert(title: String, message: String) {
+    let alert = NSAlert()
+    alert.alertStyle = .warning
+    alert.messageText = title
+    alert.informativeText = message
+    alert.addButton(withTitle: "OK")
+    alert.runModal()
+  }
+
   /// `kill <pid>` delivers SIGTERM; wire it through AppKit terminate so the stub is reaped.
   private func installSignalHandlers() {
     for sig in [SIGTERM, SIGINT] {
@@ -75,20 +115,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       source.resume()
       signalSources.append(source)
     }
-  }
-
-  private func makeRuntime() -> ProxyRuntime {
-    guard let helperURL = resolveStubHelperURL() else {
-      preconditionFailure(
-        "StubProxyHelper not found next to ClaudeCodeRoutes. Run `swift build` so both products land in .build/.../debug/."
-      )
-    }
-
-    return ProxyRuntime(
-      executableURL: helperURL,
-      arguments: [],
-      runner: FoundationProcessRunner()
-    )
   }
 
   /// SPM places `ClaudeCodeRoutes` and `StubProxyHelper` in the same build output directory.

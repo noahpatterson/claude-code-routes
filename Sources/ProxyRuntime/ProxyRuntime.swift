@@ -10,10 +10,15 @@ public protocol ProcessRunning: AnyObject {
   func start(executableURL: URL, arguments: [String]) throws -> any RunningProcess
 }
 
+/// Owns the lifecycle of the local proxy helper process.
+///
+/// All mutable state is guarded by `stateLock` so `start` / `stop` / `isHealthy`
+/// are safe to call from concurrent contexts (e.g. main thread + signal path).
 public final class ProxyRuntime: @unchecked Sendable {
   private let executableURL: URL
   private let arguments: [String]
   private let runner: any ProcessRunning
+  private let stateLock = NSLock()
   private var process: (any RunningProcess)?
 
   public init(
@@ -27,19 +32,26 @@ public final class ProxyRuntime: @unchecked Sendable {
   }
 
   public var isHealthy: Bool {
-    process?.isRunning == true
+    stateLock.lock()
+    defer { stateLock.unlock() }
+    return process?.isRunning == true
   }
 
   public func start() throws {
-    if isHealthy {
+    stateLock.lock()
+    defer { stateLock.unlock() }
+    if process?.isRunning == true {
       return
     }
     process = try runner.start(executableURL: executableURL, arguments: arguments)
   }
 
   public func stop() {
-    process?.terminate()
+    stateLock.lock()
+    let current = process
     process = nil
+    stateLock.unlock()
+    current?.terminate()
   }
 }
 

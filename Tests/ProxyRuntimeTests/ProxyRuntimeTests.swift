@@ -62,6 +62,28 @@ struct ProxyRuntimeTests {
     runtime.stop()
     #expect(!runtime.isHealthy)
   }
+
+  @Test("concurrent start and stop do not race")
+  func concurrentStartAndStopDoNotRace() async throws {
+    let runtime = ProxyRuntime(
+      executableURL: URL(fileURLWithPath: "/bin/sleep"),
+      arguments: ["30"],
+      runner: FoundationProcessRunner()
+    )
+
+    try await withThrowingTaskGroup(of: Void.self) { group in
+      for _ in 0..<20 {
+        group.addTask {
+          try runtime.start()
+          _ = runtime.isHealthy
+          runtime.stop()
+        }
+      }
+      try await group.waitForAll()
+    }
+
+    #expect(!runtime.isHealthy)
+  }
 }
 
 final class FakeProcessRunner: ProcessRunning, @unchecked Sendable {
