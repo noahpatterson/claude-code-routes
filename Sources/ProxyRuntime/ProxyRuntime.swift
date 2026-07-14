@@ -7,7 +7,8 @@ public protocol RunningProcess: AnyObject {
 }
 
 public protocol ProcessRunning: AnyObject {
-  func start(executableURL: URL, arguments: [String]) throws -> any RunningProcess
+  func start(executableURL: URL, arguments: [String], environment: [String: String]) throws
+    -> any RunningProcess
 }
 
 /// Owns the lifecycle of the local proxy helper process.
@@ -20,15 +21,18 @@ public final class ProxyRuntime: @unchecked Sendable {
   private let runner: any ProcessRunning
   private let stateLock = NSLock()
   private var process: (any RunningProcess)?
+  private let environment: [String: String]
 
   public init(
     executableURL: URL,
     arguments: [String] = [],
-    runner: any ProcessRunning
+    runner: any ProcessRunning,
+    environment: [String: String] = [:]
   ) {
     self.executableURL = executableURL
     self.arguments = arguments
     self.runner = runner
+    self.environment = environment
   }
 
   public var isHealthy: Bool {
@@ -43,7 +47,8 @@ public final class ProxyRuntime: @unchecked Sendable {
     if process?.isRunning == true {
       return
     }
-    process = try runner.start(executableURL: executableURL, arguments: arguments)
+    process = try runner.start(
+      executableURL: executableURL, arguments: arguments, environment: environment)
   }
 
   public func stop() {
@@ -58,10 +63,19 @@ public final class ProxyRuntime: @unchecked Sendable {
 public final class FoundationProcessRunner: ProcessRunning {
   public init() {}
 
-  public func start(executableURL: URL, arguments: [String]) throws -> any RunningProcess {
+  public func start(executableURL: URL, arguments: [String], environment: [String: String])
+    throws -> any RunningProcess
+  {
     let process = Process()
     process.executableURL = executableURL
     process.arguments = arguments
+    // Merge overlays into the current env; assigning only the overlay would
+    // drop PATH/HOME and break most child processes.
+    var merged = ProcessInfo.processInfo.environment
+    for (key, value) in environment {
+      merged[key] = value
+    }
+    process.environment = merged
     process.standardInput = FileHandle.nullDevice
     process.standardOutput = FileHandle.nullDevice
     process.standardError = FileHandle.nullDevice

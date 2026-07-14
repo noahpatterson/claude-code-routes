@@ -89,9 +89,13 @@ struct ProxyRuntimeTests {
 final class FakeProcessRunner: ProcessRunning, @unchecked Sendable {
   private(set) var startCallCount = 0
   private(set) var lastProcess: FakeRunningProcess?
+  private(set) var lastEnvironment: [String: String]?
 
-  func start(executableURL: URL, arguments: [String]) throws -> any RunningProcess {
+  func start(executableURL: URL, arguments: [String], environment: [String: String]) throws
+    -> any RunningProcess
+  {
     startCallCount += 1
+    lastEnvironment = environment
     let process = FakeRunningProcess()
     lastProcess = process
     return process
