@@ -1,0 +1,44 @@
+{
+  "configurations": [
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:claude-code-routes}",
+      "name": "Debug StubProxyHelper",
+      "target": "StubProxyHelper",
+      "configuration": "debug",
+      "preLaunchTask": "swift: Build Debug StubProxyHelper"
+    },
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:claude-code-routes}",
+      "name": "Release StubProxyHelper",
+      "target": "StubProxyHelper",
+      "configuration": "release",
+      "preLaunchTask": "swift: Build Release StubProxyHelper"
+    },
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:claude-code-routes}",
+      "name": "Debug ClaudeCodeRoutes",
+      "target": "ClaudeCodeRoutes",
+      "configuration": "debug",
+      "preLaunchTask": "swift: Build Debug ClaudeCodeRoutes"
+    },
+    {
+      "type": "swift",
+      "request": "launch",
+      "args": [],
+      "cwd": "${workspaceFolder:claude-code-routes}",
+      "name": "Release ClaudeCodeRoutes",
+      "target": "ClaudeCodeRoutes",
+      "configuration": "release",
+      "preLaunchTask": "swift: Build Release ClaudeCodeRoutes"
+    }
+  ]
+}
