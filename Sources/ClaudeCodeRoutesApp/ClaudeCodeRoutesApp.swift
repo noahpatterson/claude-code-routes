@@ -281,26 +281,4 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       signalSources.append(source)
     }
   }
-
-  /// SPM places `ClaudeCodeRoutes` and `StubProxyHelper` in the same build output directory.
-  private func resolveStubHelperURL() -> URL? {
-    let fm = FileManager.default
-    var candidates: [URL] = []
-
-    if let executableURL = Bundle.main.executableURL {
-      candidates.append(
-        executableURL.deletingLastPathComponent().appendingPathComponent("StubProxyHelper")
-      )
-    }
-
-    let cwd = URL(fileURLWithPath: fm.currentDirectoryPath)
-    candidates.append(contentsOf: [
-      cwd.appendingPathComponent(".build/debug/StubProxyHelper"),
-      cwd.appendingPathComponent(".build/release/StubProxyHelper"),
-      cwd.appendingPathComponent(".build/arm64-apple-macosx/debug/StubProxyHelper"),
-      cwd.appendingPathComponent(".build/arm64-apple-macosx/release/StubProxyHelper"),
-    ])
-
-    return candidates.first { fm.isExecutableFile(atPath: $0.path) }
-  }
 }

@@ -6,12 +6,10 @@ let package = Package(
   platforms: [.macOS(.v14)],
   products: [
     .library(name: "ProxyRuntime", targets: ["ProxyRuntime"]),
-    .executable(name: "StubProxyHelper", targets: ["StubProxyHelper"]),
     .executable(name: "ClaudeCodeRoutes", targets: ["ClaudeCodeRoutesApp"]),
   ],
   targets: [
     .target(name: "ProxyRuntime"),
-    .executableTarget(name: "StubProxyHelper"),
     .executableTarget(
       name: "ClaudeCodeRoutesApp",
       dependencies: ["ProxyRuntime"]
