@@ -13,12 +13,18 @@ protocol ProxyHealthChecking: AnyObject {
 /// distinguishes "starting/not ready" vs "stopped" when the URL is down.
 @MainActor
 final class ProxyHealthChecker: ProxyHealthChecking {
+  private let probe: HTTPProbe
   private let proxyURL: URL
   private let onStatusChange: (Bool, String) -> Void
   private var healthPollTask: Task<Void, Never>?
 
-  init(proxyURL: URL, onStatusChange: @escaping (Bool, String) -> Void) {
+  init(
+    proxyURL: URL,
+    probe: HTTPProbe = URLSessionHTTPProbe(),
+    onStatusChange: @escaping (Bool, String) -> Void
+  ) {
     self.proxyURL = proxyURL
+    self.probe = probe
     self.onStatusChange = onStatusChange
   }
 
@@ -26,13 +32,15 @@ final class ProxyHealthChecker: ProxyHealthChecking {
     healthPollTask?.cancel()
     healthPollTask = Task { [weak self] in
       guard let self else { return }
+      let probe = self.probe
+      let proxyURL = self.proxyURL
       var lastMessage: String?
       var sawReady = false
       let readinessChecker = FoundationProxyHealthReadiness()
 
       while !Task.isCancelled {
         let processUp = runtime.isHealthy
-        let urlUp = await self.isProxyRunningViaURL()
+        let urlUp = await probe.isUp(url: proxyURL)
 
         let status = readinessChecker.readiness(
           urlUp: urlUp, processUp: processUp, sawReady: &sawReady)
@@ -55,18 +63,5 @@ final class ProxyHealthChecker: ProxyHealthChecking {
   func stop() {
     healthPollTask?.cancel()
     healthPollTask = nil
-  }
-
-  /// True when something is accepting HTTP on the proxy port.
-  ///
-  /// `GET /` returns 404 JSON from claude-code-proxy — that still means the
-  /// server is up, so any `HTTPURLResponse` counts as ready (not only 200).
-  private func isProxyRunningViaURL() async -> Bool {
-    do {
-      let (_, response) = try await URLSession.shared.data(from: proxyURL)
-      return response is HTTPURLResponse
-    } catch {
-      return false
-    }
   }
 }
