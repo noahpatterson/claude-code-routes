@@ -1,15 +1,22 @@
-// Plan to split out ClaudeCodeRoutes to different seams
-//
-// - ClaudeCodeRoutesApp - calls the resolver, constructs ProxyRuntime, presents alerts.
-// - ProxyConfiguration.swift: resolves environment precedence and returns configuration.
-// - CommandRunning.swift: hides Process and output capture.
-// - OnePasswordSecretReader.swift: knows how to invoke op.
-// - ProxyRuntime: remains unaware of environment variables and 1Password.
 import Foundation
 
 struct ProxyConfiguration {
   let proxyPath: URL
   let apiKey: String
+}
+
+enum ProxyConfigurationError: Error, Equatable, LocalizedError {
+  case proxyPathNotExecutable
+  case onePasswordExecutableNotExecutable
+
+  var errorDescription: String? {
+    switch self {
+    case .proxyPathNotExecutable:
+      return "Proxy path is not executable"
+    case .onePasswordExecutableNotExecutable:
+      return "One password executable is not executable"
+    }
+  }
 }
 
 struct ProxyConfigurationResolver {
@@ -29,9 +36,7 @@ struct ProxyConfigurationResolver {
       ?? defaultProxyPath
 
     if !checkPathIsExecutable(atPath: proxyPath) {
-      throw NSError(
-        domain: "ProxyConfiguration", code: 1,
-        userInfo: [NSLocalizedDescriptionKey: "Proxy path is not executable"])
+      throw ProxyConfigurationError.proxyPathNotExecutable
     }
 
     let onePasswordExecutable =
@@ -40,9 +45,7 @@ struct ProxyConfigurationResolver {
       ?? defaultOnePasswordExecutable
 
     if !checkPathIsExecutable(atPath: onePasswordExecutable) {
-      throw NSError(
-        domain: "ProxyConfiguration", code: 1,
-        userInfo: [NSLocalizedDescriptionKey: "One password executable is not executable"])
+      throw ProxyConfigurationError.onePasswordExecutableNotExecutable
     }
 
     let apiKey =
