@@ -18,5 +18,9 @@ let package = Package(
       name: "ProxyRuntimeTests",
       dependencies: ["ProxyRuntime"]
     ),
+    .testTarget(
+      name: "ClaudeCodeRoutesAppTests",
+      dependencies: ["ClaudeCodeRoutesApp", "ProxyRuntime"]
+    ),
   ]
 )
