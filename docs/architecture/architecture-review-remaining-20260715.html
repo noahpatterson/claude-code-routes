@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Architecture review — remaining work · Claude Code Routes</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script type="module">
+    import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+    mermaid.initialize({ startOnLoad: true, theme: "neutral", securityLevel: "loose" });
+  </script>
+  <style>
+    .seam { border-style: dashed; }
+    .deep { background: linear-gradient(135deg, #0f172a, #1e293b); }
+    .arrow { color: #64748b; font-size: 1.3rem; }
+  </style>
+</head>
+<body class="bg-stone-50 text-slate-900 font-sans">
+<main class="max-w-6xl mx-auto px-6 py-12 space-y-12">
+  <header class="space-y-5">
+    <div class="flex items-center justify-between gap-4">
+      <div>
+        <p class="text-xs uppercase tracking-[0.25em] text-emerald-700 font-semibold">Architecture review · follow-up</p>
+        <h1 class="mt-2 text-4xl font-serif tracking-tight">What remains after 1, 2, 5</h1>
+        <p class="mt-2 text-sm text-slate-500">15 July 2026 · candidates 1, 2, 5 implemented — verifying depth and locality</p>
+      </div>
+      <div class="text-xs text-slate-500 border border-slate-200 bg-white rounded-lg px-4 py-3 space-y-2">
+        <div><span class="inline-block w-3 h-3 rounded bg-slate-800 mr-2"></span>deep module</div>
+        <div><span class="inline-block w-3 h-3 border border-dashed border-slate-500 mr-2"></span>seam</div>
+        <div><span class="text-red-700 font-bold mr-2">→</span>leakage</div>
+      </div>
+    </div>
+    <div class="border-l-4 border-emerald-400 bg-emerald-50 px-4 py-3 text-sm text-emerald-950">
+      <strong>Done.</strong> Configuration, command execution, secret reading, and readiness are now separate files with their own interfaces. The stub target and its resolver are deleted, and <code>Package.swift</code> no longer builds <code>StubProxyHelper</code>. Build is green.
+    </div>
+    <div class="border-l-4 border-amber-400 bg-amber-50 px-4 py-3 text-sm text-amber-950">
+      <strong>The seams exist but are untested.</strong> The point of the extraction was a test surface. There is still no test target for <code>ClaudeCodeRoutesApp</code>, the readiness policy is still fused to <code>URLSession.shared</code> and real time, and the README still documents the deleted stub.
+    </div>
+  </header>
+
+  <section id="candidates" class="space-y-10">
+
+    <!-- REMAINING 1 -->
+    <article class="rounded-2xl border border-slate-200 bg-white p-7 shadow-sm space-y-6">
+      <div class="flex flex-wrap items-center gap-3">
+        <h2 class="text-2xl font-serif">R1. Exercise the configuration seam</h2>
+        <span class="rounded-full bg-emerald-100 text-emerald-800 px-3 py-1 text-xs font-semibold">Strong</span>
+        <span class="rounded-full bg-slate-100 text-slate-600 px-3 py-1 text-xs">mock</span>
+        <span class="rounded-full bg-red-100 text-red-700 px-3 py-1 text-xs font-semibold">no test target</span>
+      </div>
+      <div class="grid md:grid-cols-2 gap-6 text-sm">
+        <div><p class="text-xs uppercase tracking-wider text-slate-400 mb-2">Files</p><p class="font-mono text-xs leading-6">Sources/ClaudeCodeRoutesApp/ProxyConfiguration.swift<br/>Sources/ClaudeCodeRoutesApp/CommandRunning.swift<br/>Sources/ClaudeCodeRoutesApp/OnePasswordSecretReader.swift<br/>Package.swift:11–21 (no ClaudeCodeRoutesApp test target)</p></div>
+        <div><p class="text-xs uppercase tracking-wider text-slate-400 mb-2">Problem</p><p>The resolver takes an explicit environment and an injectable <code>SecretReader</code> — a genuine seam — but nothing tests through it. <code>CommandRunning</code> and <code>SecretReader</code> each have one adapter; the second adapter (the fake) only exists once a test uses it.</p></div>
+      </div>
+      <div class="grid md:grid-cols-2 gap-5">
+        <div class="rounded-xl border border-slate-200 bg-white p-4 h-72">
+          <p class="text-xs uppercase tracking-wider text-slate-500 font-semibold mb-3">Now · seam with one adapter</p>
+          <pre class="mermaid text-xs">flowchart TB
+            R[ProxyConfigurationResolver] --> S[SecretReader seam]
+            S --> OP[OnePasswordSecretReader]
+            OP --> C[CommandRunning seam]
+            C --> F[FoundationCommandRunner]
+            classDef seam stroke-dasharray:4 4,stroke:#64748b;
+            class S,C seam;
+          </pre>
+          <p class="mt-2 text-xs text-slate-500">Two seams, real adapters only. No fake proves the seam.</p>
+        </div>
+        <div class="rounded-xl deep text-white p-4 h-72">
+          <p class="text-xs uppercase tracking-wider text-emerald-300 font-semibold mb-3">Target · seam justified by a fake</p>
+          <pre class="mermaid text-xs">flowchart TB
+            T[resolver tests] --> R[ProxyConfigurationResolver]
+            R --> S[SecretReader seam]
+            S --> FK[FakeSecretReader]
+            S --> OP[OnePasswordSecretReader]
+            classDef deep fill:#0f172a,stroke:#34d399,color:#fff;
+            class R deep;
+          </pre>
+          <p class="text-xs text-emerald-200">Env precedence, missing-key, non-executable path — all provable without launching <code>op</code>.</p>
+        </div>
+      </div>
+      <div class="grid md:grid-cols-2 gap-6 text-sm">
+        <div><p class="text-xs uppercase tracking-wider text-slate-400 mb-2">Solution</p><p>Add a <code>ClaudeCodeRoutesApp</code> test target. Test <code>resolve(environment:)</code> with a fake <code>SecretReader</code>: env wins over 1Password, missing key throws, non-executable path throws. Replace the raw <code>NSError</code> with a typed <code>ProxyConfigurationError</code> so messages have one home.</p></div>
+        <div><p class="text-xs uppercase tracking-wider text-slate-400 mb-2">Benefits</p><ul class="list-disc pl-5 space-y-1"><li>the fake justifies the seam</li><li>tests hit one interface</li><li>locality: precedence is provable in one place</li><li>typed error over stringly <code>NSError</code></li></ul></div>
+      </div>
+    </article>
+
+    <!-- REMAINING 2 -->
+    <article class="rounded-2xl border border-slate-200 bg-white p-7 shadow-sm space-y-6">
+      <div class="flex flex-wrap items-center gap-3">
+        <h2 class="text-2xl font-serif">R2. Pull the readiness policy behind a probe seam</h2>
+        <span class="rounded-full bg-emerald-100 text-emerald-800 px-3 py-1 text-xs font-semibold">Strong</span>
+        <span class="rounded-full bg-slate-100 text-slate-600 px-3 py-1 text-xs">ports &amp; adapters</span>
+        <span class="rounded-full bg-red-100 text-red-700 px-3 py-1 text-xs font-semibold">policy still fused</span>
+      </div>
+      <div class="grid md:grid-cols-2 gap-6 text-sm">
+        <div><p class="text-xs uppercase tracking-wider text-slate-400 mb-2">Files</p><p class="font-mono text-xs leading-6">Sources/ClaudeCodeRoutesApp/ProxyHealth.swift:25–84</p></div>
+        <div><p class="text-xs uppercase tracking-wider text-slate-400 mb-2">Problem</p><p>Extraction moved the UI effect out (good — <code>onStatusChange</code>), but the state policy still lives inside the poll <code>Task</code>, hardcodes <code>URLSession.shared</code>, and depends on real <code>Task.sleep</code>. <code>ProxyHealthChecking</code> has no second adapter. No test can drive starting → not-ready → stopped.</p></div>
+      </div>
+      <div class="grid md:grid-cols-2 gap-5">
+        <div class="rounded-xl border border-red-200 bg-red-50 p-4 h-72">
+          <p class="text-xs uppercase tracking-wider text-red-700 font-semibold mb-3">Now · policy inside the task</p>
+          <pre class="mermaid text-xs">flowchart TB
+            M[monitor task] --> U[URLSession.shared]
+            M --> P[runtime.isHealthy]
+            M --> SR[sawReady latch]
+            M --> D[status decision]
+            U -. hardcoded .-> D
+            classDef leak stroke:#dc2626,stroke-width:2px;
+            class U leak;
+          </pre>
+          <p class="mt-2 text-xs text-red-800">The probe is not an adapter; policy can't be tested.</p>
+        </div>
+        <div class="rounded-xl deep text-white p-4 h-72">
+          <p class="text-xs uppercase tracking-wider text-emerald-300 font-semibold mb-3">Target · pure policy + probe seam</p>
+          <pre class="mermaid text-xs">flowchart TB
+            OBS[urlUp, processUp, sawReady] --> POL[readiness policy]
+            POL --> OUT[healthy + message]
+            PR[HTTPProbe seam] --> LIVE[URLSession adapter]
+            PR --> FAKE[fake probe in tests]
+            classDef deep fill:#0f172a,stroke:#34d399,color:#fff;
+            class POL deep;
+          </pre>
+          <p class="text-xs text-emerald-200">Policy is a pure function; the probe is the seam with two adapters.</p>
+        </div>
+      </div>
+      <div class="grid md:grid-cols-2 gap-6 text-sm">
+        <div><p class="text-xs uppercase tracking-wider text-slate-400 mb-2">Solution</p><p>Extract the decision into a pure function <code>readiness(urlUp:processUp:sawReady:) -&gt; (Bool, String)</code>. Put the URL probe behind an <code>HTTPProbe</code> seam with a live <code>URLSession</code> adapter and a fake. Test every transition; the <code>Task</code> just wires probe → policy → callback.</p></div>
+        <div><p class="text-xs uppercase tracking-wider text-slate-400 mb-2">Benefits</p><ul class="list-disc pl-5 space-y-1"><li>tests cover all status transitions</li><li>locality: readiness rules in one function</li><li>two adapters justify the probe seam</li><li>leverage: task only wires, never decides</li></ul></div>
+      </div>
+    </article>
+
+    <!-- REMAINING 5 -->
+    <article class="rounded-2xl border border-slate-200 bg-white p-7 shadow-sm space-y-6">
+      <div class="flex flex-wrap items-center gap-3">
+        <h2 class="text-2xl font-serif">R5. Finish retiring the stub — the README</h2>
+        <span class="rounded-full bg-emerald-100 text-emerald-800 px-3 py-1 text-xs font-semibold">Strong</span>
+        <span class="rounded-full bg-slate-100 text-slate-600 px-3 py-1 text-xs">deletion test</span>
+        <span class="rounded-full bg-amber-100 text-amber-800 px-3 py-1 text-xs font-semibold">stale docs</span>
+      </div>
+      <div class="grid md:grid-cols-2 gap-6 text-sm">
+        <div><p class="text-xs uppercase tracking-wider text-slate-400 mb-2">Files</p><p class="font-mono text-xs leading-6">README.md:7, 14, 18<br/><span class="text-emerald-700">✓ StubProxyHelper/main.swift deleted</span><br/><span class="text-emerald-700">✓ Package.swift target removed</span><br/><span class="text-emerald-700">✓ resolveStubHelperURL() removed</span></p></div>
+        <div><p class="text-xs uppercase tracking-wider text-slate-400 mb-2">Problem</p><p>Code is clean, but the README still says <code>swift run StubProxyHelper</code>, calls the project an "Issue #2 scaffold," and says "The stub proxy process should terminate with the app." The docs describe a launch path that no longer exists.</p></div>
+      </div>
+      <div class="grid md:grid-cols-2 gap-5">
+        <div class="rounded-xl border border-red-200 bg-red-50 p-4 h-72"><p class="text-xs uppercase tracking-wider text-red-700 font-semibold mb-4">Now · docs point at deleted target</p><div class="flex items-center justify-center h-48 gap-2 text-xs"><div class="border border-red-300 bg-white rounded p-3">README</div><div class="arrow text-red-700">→</div><div class="border border-red-300 bg-white rounded p-3 opacity-60">swift run<br/>StubProxyHelper</div><div class="arrow text-red-700">→</div><div class="border border-red-300 bg-white rounded p-3 line-through opacity-50">deleted</div></div></div>
+        <div class="rounded-xl deep text-white p-4 h-72"><p class="text-xs uppercase tracking-wider text-emerald-300 font-semibold mb-4">Target · docs match the real path</p><div class="flex items-center justify-center h-48"><div class="border border-emerald-400 rounded-lg p-5 text-center text-xs"><strong>real proxy path</strong><br/><span class="text-slate-300">swift run ClaudeCodeRoutes<br/>swift test</span></div></div></div>
+      </div>
+      <div class="grid md:grid-cols-2 gap-6 text-sm">
+        <div><p class="text-xs uppercase tracking-wider text-slate-400 mb-2">Solution</p><p>Drop the <code>swift run StubProxyHelper</code> line and the "stub proxy" sentence. Update Status to describe the real proxy path and current verification commands.</p></div>
+        <div><p class="text-xs uppercase tracking-wider text-slate-400 mb-2">Benefits</p><ul class="list-disc pl-5 space-y-1"><li>locality: one documented launch path</li><li>docs match the deletion</li><li>no reference to removed behavior</li></ul></div>
+      </div>
+    </article>
+
+  </section>
+
+  <section class="rounded-2xl bg-slate-900 text-white p-8 shadow-lg">
+    <p class="text-xs uppercase tracking-[0.25em] text-emerald-300 font-semibold">Top remaining</p>
+    <h2 class="mt-3 text-3xl font-serif">Add the test target, then make readiness a pure policy</h2>
+    <p class="mt-3 max-w-3xl text-slate-300">The seams from candidates 1 and 2 are drawn but unproven — there is still no test target for <code>ClaudeCodeRoutesApp</code>. Add it and write resolver tests against a fake <code>SecretReader</code> (R1); that immediately justifies the seam you already built. Then lift the readiness decision into a pure function behind an <code>HTTPProbe</code> seam (R2). R5 is a one-file README cleanup.</p>
+  </section>
+</main>
+</body>
+</html>
