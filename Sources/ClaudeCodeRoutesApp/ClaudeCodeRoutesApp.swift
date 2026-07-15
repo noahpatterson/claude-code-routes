@@ -1,6 +1,14 @@
 import AppKit
+import Foundation
 import ProxyRuntime
 import SwiftUI
+
+private enum Constants {
+  static let claudeCodeProxyPath = "/Users/testuser/.local/bin/claude-code-proxy"
+  static let claudeCodeProxyURL = "http://127.0.0.1:18765/"
+  static let mergeGatewayOnePasswordItem = "op://Personal/Merge/apikey"
+  static let proxyReadyPollInterval: Duration = .seconds(1)
+}
 
 @main
 struct ClaudeCodeRoutesApp: App {
@@ -19,49 +27,74 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private var statusItem: NSStatusItem?
   private var runtime: ProxyRuntime?
   private var signalSources: [DispatchSourceSignal] = []
+  private var proxyConfigurationResolver: ProxyConfigurationResolver?
+  private var healthChecker: ProxyHealthChecker?
 
   func applicationDidFinishLaunching(_ notification: Notification) {
     NSApp.setActivationPolicy(.accessory)
     installSignalHandlers()
 
-    let statusMessage: String
-    let healthy: Bool
+    let resolver = ProxyConfigurationResolver(
+      defaultProxyPath: URL(fileURLWithPath: Constants.claudeCodeProxyPath),
+      defaultOnePasswordExecutable: URL(fileURLWithPath: "/opt/homebrew/bin/op"),
+      onePasswordReference: Constants.mergeGatewayOnePasswordItem,
+      secretReader: OnePasswordSecretReader(runner: FoundationCommandRunner())
+    )
+    proxyConfigurationResolver = resolver
 
-    if let helperURL = resolveStubHelperURL() {
-      let runtime = ProxyRuntime(
-        executableURL: helperURL,
-        arguments: [],
-        runner: FoundationProcessRunner()
+    let proxyConfiguration: ProxyConfiguration
+    do {
+      proxyConfiguration = try resolver.resolve(
+        environment: ProcessInfo.processInfo.environment
       )
-      self.runtime = runtime
-
-      do {
-        try runtime.start()
-        healthy = runtime.isHealthy
-        statusMessage = healthy ? "Proxy: running (stub)" : "Proxy: failed to start"
-      } catch {
-        healthy = false
-        statusMessage = "Proxy: failed to start"
-        NSLog("ClaudeCodeRoutes: failed to start stub proxy: \(error.localizedDescription)")
-        presentAlert(
-          title: "Couldn’t start stub proxy",
-          message: error.localizedDescription
-        )
-      }
-    } else {
-      healthy = false
-      statusMessage = "Proxy: stub helper missing"
+    } catch {
+      installStatusItem(healthy: false, statusMessage: error.localizedDescription)
       presentAlert(
-        title: "Stub proxy helper not found",
-        message: """
-        StubProxyHelper was not found next to ClaudeCodeRoutes.
-
-        Run `swift build` so both products land in `.build/.../debug/`, then launch the built ClaudeCodeRoutes binary again.
-        """
+        title: "Failed to resolve proxy configuration",
+        message: error.localizedDescription
       )
+      return
     }
 
-    installStatusItem(healthy: healthy, statusMessage: statusMessage)
+    let proxyExecutableURL = proxyConfiguration.proxyPath
+    let arguments = [
+      "serve",
+      "--no-monitor",
+    ]
+    let runtime = ProxyRuntime(
+      executableURL: proxyExecutableURL,
+      arguments: arguments,
+      runner: FoundationProcessRunner(),
+      environment: [
+        "CCP_MERGE_AUTH_TOKEN": proxyConfiguration.apiKey
+      ]
+    )
+    self.runtime = runtime
+
+    do {
+      try runtime.start()
+    } catch {
+      installStatusItem(healthy: false, statusMessage: "Claude Code Proxy: failed to start")
+      presentAlert(
+        title: "Claude Code Proxy failed to start",
+        message: """
+          Claude Code Proxy failed to start: \(error.localizedDescription).
+          """
+      )
+      return
+    }
+
+    installStatusItem(healthy: false, statusMessage: "Claude Code Proxy: starting…")
+
+    guard let proxyHealthURL = URL(string: Constants.claudeCodeProxyURL) else {
+      return
+    }
+    let healthChecker = ProxyHealthChecker(proxyURL: proxyHealthURL) {
+      [weak self] healthy, message in
+      self?.updateStatusItem(healthy: healthy, statusMessage: message)
+    }
+    self.healthChecker = healthChecker
+    healthChecker.monitor(runtime: runtime, interval: Constants.proxyReadyPollInterval)
   }
 
   func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
@@ -74,25 +107,32 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   private func stopProxy() {
+    healthChecker?.stop()
+    healthChecker = nil
     runtime?.stop()
     runtime = nil
   }
 
   private func installStatusItem(healthy: Bool, statusMessage: String) {
     let item = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
-    if let button = item.button {
-      button.title = healthy ? "CCR ●" : "CCR ○"
-      button.toolTip = "Claude Code Routes"
-    }
+    item.button?.toolTip = "Claude Code Routes"
+    statusItem = item
+    updateStatusItem(healthy: healthy, statusMessage: statusMessage)
+  }
+
+  private func updateStatusItem(healthy: Bool, statusMessage: String) {
+    guard let item = statusItem else { return }
+    item.button?.title = healthy ? "CCR ●" : "CCR ○"
 
     let menu = NSMenu()
     menu.addItem(NSMenuItem(title: statusMessage, action: nil, keyEquivalent: ""))
     menu.addItem(NSMenuItem.separator())
     menu.addItem(
-      NSMenuItem(title: "Quit Claude Code Routes", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
+      NSMenuItem(
+        title: "Quit Claude Code Routes", action: #selector(NSApplication.terminate(_:)),
+        keyEquivalent: "q")
     )
     item.menu = menu
-    statusItem = item
   }
 
   private func presentAlert(title: String, message: String) {
@@ -104,7 +144,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     alert.runModal()
   }
 
-  /// `kill <pid>` delivers SIGTERM; wire it through AppKit terminate so the stub is reaped.
+  /// `kill <pid>` delivers SIGTERM;.
   private func installSignalHandlers() {
     for sig in [SIGTERM, SIGINT] {
       signal(sig, SIG_IGN)
@@ -115,27 +155,5 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       source.resume()
       signalSources.append(source)
     }
-  }
-
-  /// SPM places `ClaudeCodeRoutes` and `StubProxyHelper` in the same build output directory.
-  private func resolveStubHelperURL() -> URL? {
-    let fm = FileManager.default
-    var candidates: [URL] = []
-
-    if let executableURL = Bundle.main.executableURL {
-      candidates.append(
-        executableURL.deletingLastPathComponent().appendingPathComponent("StubProxyHelper")
-      )
-    }
-
-    let cwd = URL(fileURLWithPath: fm.currentDirectoryPath)
-    candidates.append(contentsOf: [
-      cwd.appendingPathComponent(".build/debug/StubProxyHelper"),
-      cwd.appendingPathComponent(".build/release/StubProxyHelper"),
-      cwd.appendingPathComponent(".build/arm64-apple-macosx/debug/StubProxyHelper"),
-      cwd.appendingPathComponent(".build/arm64-apple-macosx/release/StubProxyHelper"),
-    ])
-
-    return candidates.first { fm.isExecutableFile(atPath: $0.path) }
   }
 }
