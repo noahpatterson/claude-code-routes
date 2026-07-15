@@ -1,0 +1,121 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Architecture review — claude-code-routes</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script type="module">
+    import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+    mermaid.initialize({ startOnLoad: true, theme: "neutral", securityLevel: "loose" });
+  </script>
+  <style>
+    .seam { border-style: dashed; }
+    .deep { background: linear-gradient(135deg, #0f172a, #1e293b); }
+  </style>
+</head>
+<body class="bg-stone-50 text-slate-900 font-sans">
+<main class="max-w-5xl mx-auto px-6 py-12 space-y-12">
+  <header class="flex flex-col gap-5 border-b border-slate-200 pb-8">
+    <div>
+      <p class="text-xs uppercase tracking-[0.2em] text-slate-500">Uncommitted changes only · 2026-07-15</p>
+      <h1 class="mt-2 text-4xl font-serif font-semibold">Architecture review — claude-code-routes</h1>
+    </div>
+    <div class="flex flex-wrap gap-4 text-xs text-slate-600">
+      <span class="flex items-center gap-2"><i class="h-4 w-6 border border-slate-500 bg-white"></i> module</span>
+      <span class="flex items-center gap-2"><i class="h-4 w-6 border border-dashed border-slate-500 bg-white"></i> seam</span>
+      <span class="flex items-center gap-2"><i class="h-1 w-6 bg-red-600"></i> leakage</span>
+      <span class="flex items-center gap-2"><i class="h-4 w-6 bg-slate-800"></i> deep module</span>
+    </div>
+  </header>
+
+  <section id="candidates" class="space-y-10">
+    <article id="launch-planning" class="rounded-2xl border border-slate-200 bg-white p-7 shadow-sm space-y-6">
+      <div class="flex flex-wrap items-start justify-between gap-4">
+        <h2 class="text-2xl font-serif font-semibold">Concentrate launch planning</h2>
+        <div class="flex gap-2"><span class="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800">Worth exploring</span><span class="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-700">in-process</span></div>
+      </div>
+      <div><p class="text-xs uppercase tracking-wider text-slate-500">Files</p><p class="mt-1 font-mono text-sm">ProxyConfiguration.swift · ProxyLaunchPlanner.swift · ProxyLaunchPlannerTests.swift</p></div>
+      <div class="grid gap-5 md:grid-cols-2">
+        <div class="rounded-xl border border-red-200 bg-red-50/30 p-4">
+          <p class="mb-3 text-xs font-bold uppercase tracking-wider text-red-700">Before · two shallow modules</p>
+          <pre class="mermaid">flowchart TD
+ S[AppSettings] --> P[ProxyLaunchPlanner]
+ P -->|settings initializer| R[ProxyConfigurationResolver]
+ E[Environment] --> R
+ R --> C[ProxyConfiguration]
+ P -->|parse URL| L[ProxyLaunchPlan]
+ C --> L
+ classDef leak stroke:#dc2626,stroke-width:2px;
+ class P,R leak</pre>
+        </div>
+        <div class="rounded-xl border border-emerald-200 bg-emerald-50/30 p-4">
+          <p class="mb-3 text-xs font-bold uppercase tracking-wider text-emerald-700">After · one ownership point</p>
+          <div class="deep min-h-[260px] rounded-xl p-6 text-white flex flex-col justify-between">
+            <div class="rounded border border-dashed border-slate-400 p-3 text-center text-xs uppercase tracking-wider">Settings + environment seam</div>
+            <div class="space-y-2 text-center text-sm text-slate-300"><p>precedence policy</p><p>secret resolution</p><p>URL validation</p></div>
+            <div class="rounded bg-white px-4 py-3 text-center font-semibold text-slate-900">Ready-to-launch plan</div>
+          </div>
+        </div>
+      </div>
+      <div class="grid gap-4 md:grid-cols-2">
+        <div><h3 class="text-xs font-bold uppercase tracking-wider text-slate-500">Problem</h3><p class="mt-1 text-sm">The planner delegates almost everything through “default” values that are now explicit settings, while environment precedence leaks across the seam without a tested owner.</p></div>
+        <div><h3 class="text-xs font-bold uppercase tracking-wider text-slate-500">Solution</h3><p class="mt-1 text-sm">Make one module own the settings-to-plan path, including precedence, secret resolution, and URL validation.</p></div>
+      </div>
+      <ul class="grid gap-2 text-sm sm:grid-cols-3"><li>✓ locality: precedence has one home</li><li>✓ leverage: tests hit one interface</li><li>✓ naming matches configured values</li></ul>
+    </article>
+
+    <article id="settings-state" class="rounded-2xl border border-slate-200 bg-white p-7 shadow-sm space-y-6">
+      <div class="flex flex-wrap items-start justify-between gap-4">
+        <h2 class="text-2xl font-serif font-semibold">Make settings one source of state</h2>
+        <div class="flex gap-2"><span class="rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800">Worth exploring</span><span class="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-700">local-substitutable</span></div>
+      </div>
+      <div><p class="text-xs uppercase tracking-wider text-slate-500">Files</p><p class="mt-1 font-mono text-sm">AppSettings.swift · SettingsView.swift · AppSettingsStoreTests.swift</p></div>
+      <div class="grid gap-5 md:grid-cols-2">
+        <div class="rounded-xl border border-red-200 bg-red-50/30 p-4">
+          <p class="mb-4 text-xs font-bold uppercase tracking-wider text-red-700">Before · field list repeated</p>
+          <div class="space-y-2 text-xs uppercase tracking-wider">
+            <div class="rounded border border-slate-300 bg-white p-3">AppSettings · 3 fields</div>
+            <div class="rounded border border-slate-300 bg-white p-3">Store keys/load/save · 3 fields</div>
+            <div class="rounded border-2 border-red-500 bg-white p-3">SettingsModel · 3 fields</div>
+            <div class="rounded border-2 border-red-500 bg-white p-3">current/reload · 3 copies</div>
+          </div>
+        </div>
+        <div class="rounded-xl border border-emerald-200 bg-emerald-50/30 p-4">
+          <p class="mb-4 text-xs font-bold uppercase tracking-wider text-emerald-700">After · value owns the field list</p>
+          <div class="space-y-4">
+            <div class="deep rounded-xl p-5 text-white">
+              <p class="text-xs uppercase tracking-wider text-slate-300">Observable settings module</p>
+              <p class="mt-3 text-center font-semibold">one AppSettings value</p>
+            </div>
+            <div class="seam rounded-xl border-2 border-slate-400 bg-white p-4 text-center"><p class="text-xs uppercase tracking-wider text-slate-500">Persistence seam</p><p class="mt-2 text-sm">UserDefaults adapter owns key mapping</p></div>
+          </div>
+        </div>
+      </div>
+      <div class="grid gap-4 md:grid-cols-2">
+        <div><h3 class="text-xs font-bold uppercase tracking-wider text-slate-500">Problem</h3><p class="mt-1 text-sm">SettingsModel is shallow: its interface mirrors AppSettings, and each new field must be copied across four sites.</p></div>
+        <div><h3 class="text-xs font-bold uppercase tracking-wider text-slate-500">Solution</h3><p class="mt-1 text-sm">Let the observable module hold one AppSettings value; keep field enumeration only in the value and persistence adapter.</p></div>
+      </div>
+      <ul class="grid gap-2 text-sm sm:grid-cols-3"><li>✓ locality: one state definition</li><li>✓ interface shrinks</li><li>✓ round-trip tests survive</li></ul>
+    </article>
+
+    <article id="presenter" class="rounded-2xl border border-slate-200 bg-white p-7 shadow-sm space-y-5">
+      <div class="flex flex-wrap items-start justify-between gap-4"><h2 class="text-2xl font-serif font-semibold">Keep window presentation focused</h2><div class="flex gap-2"><span class="rounded-full bg-slate-200 px-3 py-1 text-xs font-semibold text-slate-700">Speculative</span><span class="rounded-full bg-slate-100 px-3 py-1 text-xs text-slate-700">in-process</span></div></div>
+      <div><p class="text-xs uppercase tracking-wider text-slate-500">Files</p><p class="mt-1 font-mono text-sm">SettingsWindowPresenter.swift · SettingsWindowPresenterTests.swift</p></div>
+      <div class="grid gap-5 md:grid-cols-2">
+        <div class="rounded-xl border border-slate-200 p-5"><p class="text-xs font-bold uppercase tracking-wider text-slate-500">Before</p><div class="mt-4 rounded border border-slate-400 bg-white p-5 text-center"><p class="font-semibold">open()</p><p class="mt-2 text-sm text-red-700">reload persistence + present panel</p></div></div>
+        <div class="rounded-xl border border-slate-200 p-5"><p class="text-xs font-bold uppercase tracking-wider text-slate-500">After candidate 2</p><div class="mt-4 deep rounded p-5 text-center text-white"><p class="font-semibold">open()</p><p class="mt-2 text-sm text-slate-300">single assignment + panel lifecycle</p></div></div>
+      </div>
+      <div class="grid gap-4 md:grid-cols-2"><div><h3 class="text-xs font-bold uppercase tracking-wider text-slate-500">Problem</h3><p class="mt-1 text-sm">Presentation and persistence refresh share one method, slightly weakening locality.</p></div><div><h3 class="text-xs font-bold uppercase tracking-wider text-slate-500">Solution</h3><p class="mt-1 text-sm">Do not refactor independently; candidate 2 reduces the coupling enough.</p></div></div>
+      <ul class="text-sm"><li>✓ no standalone seam needed</li></ul>
+    </article>
+  </section>
+
+  <section id="top-recommendation" class="rounded-2xl bg-indigo-950 p-8 text-white">
+    <p class="text-xs uppercase tracking-[0.2em] text-indigo-300">Top recommendation</p>
+    <h2 class="mt-2 text-3xl font-serif font-semibold"><a class="underline decoration-indigo-400 underline-offset-4" href="#launch-planning">Concentrate launch planning</a></h2>
+    <p class="mt-3 text-indigo-100">It gives precedence policy one owner and one test surface; no candidate is a must-fix before merge.</p>
+  </section>
+</main>
+</body>
+</html>
