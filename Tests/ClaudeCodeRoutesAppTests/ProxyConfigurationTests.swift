@@ -118,6 +118,43 @@ struct ProxyConfigurationTests {
     }
   }
 
+  @Test("empty onePassword reference without API key throws")
+  func emptyOnePasswordReferenceWithoutApiKeyThrows() throws {
+    let secretReader = FakeSecretReader()
+
+    let resolver = ProxyConfigurationResolver(
+      defaultProxyPath: Self.fakeExecutablePath,
+      defaultOnePasswordExecutable: Self.fakeExecutablePath,
+      onePasswordReference: "",
+      secretReader: secretReader
+    )
+
+    #expect(throws: ProxyConfigurationError.missingOnePasswordReference) {
+      try resolver.resolve(environment: [:])
+    }
+    #expect(secretReader.callCount == 0)
+  }
+
+  @Test("AppSettings supply resolver path and onePassword defaults")
+  func appSettingsSupplyResolverDefaults() throws {
+    let secretReader = FakeSecretReader()
+    let proxyPath = createEmptyExecutableFile(suffix: "from-settings")
+    let settings = AppSettings(
+      claudeCodeProxyPath: proxyPath.path,
+      claudeCodeProxyURL: "http://127.0.0.1:18765/",
+      mergeGatewayOnePasswordItem: "op://Personal/ITEM/KEY"
+    )
+
+    let proxyConfiguration = try ProxyConfigurationResolver(
+      settings: settings,
+      defaultOnePasswordExecutable: Self.fakeExecutablePath,
+      secretReader: secretReader
+    ).resolve(environment: [:])
+
+    #expect(proxyConfiguration.proxyPath == proxyPath)
+    #expect(secretReader.lastReference == "op://Personal/ITEM/KEY")
+  }
+
   @Test("secret reader failure propagates")
   func secretReaderFailurePropagates() throws {
     let secretReader = FakeSecretReader()

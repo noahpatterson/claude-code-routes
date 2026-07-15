@@ -8,6 +8,7 @@ struct ProxyConfiguration {
 enum ProxyConfigurationError: Error, Equatable, LocalizedError {
   case proxyPathNotExecutable
   case onePasswordExecutableNotExecutable
+  case missingOnePasswordReference
 
   var errorDescription: String? {
     switch self {
@@ -15,6 +16,8 @@ enum ProxyConfigurationError: Error, Equatable, LocalizedError {
       return "Proxy path is not executable"
     case .onePasswordExecutableNotExecutable:
       return "One password executable is not executable"
+    case .missingOnePasswordReference:
+      return "Set mergeGatewayOnePasswordItem (op://Personal/ITEM/KEY) or MERGE_GATEWAY_API_KEY"
     }
   }
 }
@@ -24,6 +27,31 @@ struct ProxyConfigurationResolver {
   let defaultOnePasswordExecutable: URL
   let onePasswordReference: String
   let secretReader: any SecretReader
+
+  init(
+    defaultProxyPath: URL,
+    defaultOnePasswordExecutable: URL,
+    onePasswordReference: String,
+    secretReader: any SecretReader
+  ) {
+    self.defaultProxyPath = defaultProxyPath
+    self.defaultOnePasswordExecutable = defaultOnePasswordExecutable
+    self.onePasswordReference = onePasswordReference
+    self.secretReader = secretReader
+  }
+
+  init(
+    settings: AppSettings,
+    defaultOnePasswordExecutable: URL,
+    secretReader: any SecretReader
+  ) {
+    self.init(
+      defaultProxyPath: URL(fileURLWithPath: settings.claudeCodeProxyPath),
+      defaultOnePasswordExecutable: defaultOnePasswordExecutable,
+      onePasswordReference: settings.mergeGatewayOnePasswordItem,
+      secretReader: secretReader
+    )
+  }
 
   func checkPathIsExecutable(atPath: URL) -> Bool {
     return FileManager.default.isExecutableFile(atPath: atPath.path)
@@ -48,10 +76,17 @@ struct ProxyConfigurationResolver {
       throw ProxyConfigurationError.onePasswordExecutableNotExecutable
     }
 
-    let apiKey =
-      try environment["MERGE_GATEWAY_API_KEY"]
-      ?? secretReader.read(executable: onePasswordExecutable, reference: onePasswordReference)
+    if let apiKey = environment["MERGE_GATEWAY_API_KEY"] {
+      return ProxyConfiguration(proxyPath: proxyPath, apiKey: apiKey)
+    }
 
+    let trimmedReference = onePasswordReference.trimmingCharacters(in: .whitespacesAndNewlines)
+    guard !trimmedReference.isEmpty else {
+      throw ProxyConfigurationError.missingOnePasswordReference
+    }
+
+    let apiKey = try secretReader.read(
+      executable: onePasswordExecutable, reference: trimmedReference)
     return ProxyConfiguration(proxyPath: proxyPath, apiKey: apiKey)
   }
 }
