@@ -28,31 +28,18 @@ final class ProxyHealthChecker: ProxyHealthChecking {
       guard let self else { return }
       var lastMessage: String?
       var sawReady = false
+      let readinessChecker = FoundationProxyHealthReadiness()
 
       while !Task.isCancelled {
         let processUp = runtime.isHealthy
         let urlUp = await self.isProxyRunningViaURL()
 
-        let healthy: Bool
-        let message: String
-        if urlUp {
-          healthy = true
-          sawReady = true
-          message = "Claude Code Proxy: running"
-        } else if processUp {
-          healthy = false
-          message =
-            sawReady
-            ? "Claude Code Proxy: not ready"
-            : "Claude Code Proxy: starting…"
-        } else {
-          healthy = false
-          message = "Claude Code Proxy: stopped"
-        }
+        let status = readinessChecker.readiness(
+          urlUp: urlUp, processUp: processUp, sawReady: &sawReady)
 
-        if lastMessage != message {
-          lastMessage = message
-          self.onStatusChange(healthy, message)
+        if lastMessage != status.message.rawValue {
+          lastMessage = status.message.rawValue
+          self.onStatusChange(status.healthy, status.message.rawValue)
           if !processUp && urlUp {
             NSLog(
               "ClaudeCodeRoutes: proxy URL is up but the managed process is not running (another instance may own the port)"
