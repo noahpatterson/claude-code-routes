@@ -1,3 +1,11 @@
+// Plan to split out ClaudeCodeRoutes to different seams
+//
+// - ClaudeCodeRoutesApp - calls the resolver, constructs ProxyRuntime, presents alerts.
+// - ProxyConfiguration.swift: resolves environment precedence and returns configuration.
+// - CommandRunning.swift: hides Process and output capture.
+// - OnePasswordSecretReader.swift: knows how to invoke op.
+// - ProxyRuntime: remains unaware of environment variables and 1Password.
+
 import AppKit
 import Foundation
 import ProxyRuntime
@@ -27,142 +35,36 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private var statusItem: NSStatusItem?
   private var runtime: ProxyRuntime?
   private var signalSources: [DispatchSourceSignal] = []
-  private var healthPollTask: Task<Void, Never>?
-
-  private var getClaudeCodeProxyPathFromEnvironment: URL? {
-    if let path = ProcessInfo.processInfo.environment["CLAUDE_CODE_PROXY_PATH"] {
-      return URL(fileURLWithPath: path)
-    }
-    return nil
-  }
-
-  private var getMergeGatewayAPIKeyFromEnvironment: String? {
-    if let key = ProcessInfo.processInfo.environment["MERGE_GATEWAY_API_KEY"] {
-      return key
-    }
-    return nil
-  }
-
-  private var getMergeGatewayAPIKeyFromOnePassword: String? {
-    do {
-      let key = try runCommandCapturingOutput(
-        executable: URL(fileURLWithPath: "/opt/homebrew/bin/op"),  // or resolve via `which`
-        arguments: ["read", Constants.mergeGatewayOnePasswordItem]
-      )
-      return key
-    } catch {
-      NSLog(
-        "ClaudeCodeRoutes: failed to get merge gateway API key from one password: \(error.localizedDescription)"
-      )
-      presentAlert(
-        title: "Failed to get merge gateway API key from one password",
-        message: error.localizedDescription
-      )
-      return nil
-    }
-  }
-
-  // TODO: can this be hoisted so it's viewable by SwiftUI?
-  private var claudeCodeProxyPath: URL {
-    if let path = getClaudeCodeProxyPathFromEnvironment {
-      return path
-    }
-    return URL(fileURLWithPath: Constants.claudeCodeProxyPath)
-  }
-
-  /// True when something is accepting HTTP on the proxy port.
-  ///
-  /// `GET /` returns 404 JSON from claude-code-proxy — that still means the
-  /// server is up, so any `HTTPURLResponse` counts as ready (not only 200).
-  private func isProxyRunningViaURL() async -> Bool {
-    guard let url = URL(string: Constants.claudeCodeProxyURL) else {
-      return false
-    }
-
-    do {
-      let (_, response) = try await URLSession.shared.data(from: url)
-      return response is HTTPURLResponse
-    } catch {
-      return false
-    }
-  }
-
-  /// Keeps polling the ready URL until quit, updating the menu when readiness
-  /// flips. URL reachability is the source of truth for ●/○; process liveness
-  /// only distinguishes "starting/not ready" vs "stopped" when the URL is down.
-  private func monitorProxyHealth(interval: Duration = Constants.proxyReadyPollInterval) {
-    healthPollTask?.cancel()
-    healthPollTask = Task { @MainActor [weak self] in
-      guard let self else { return }
-      var lastMessage: String?
-      var sawReady = false
-
-      while !Task.isCancelled {
-        let processUp = self.runtime?.isHealthy == true
-        let urlUp = await self.isProxyRunningViaURL()
-
-        let healthy: Bool
-        let message: String
-        if urlUp {
-          healthy = true
-          sawReady = true
-          message = "Claude Code Proxy: running"
-        } else if processUp {
-          healthy = false
-          message =
-            sawReady
-            ? "Claude Code Proxy: not ready"
-            : "Claude Code Proxy: starting…"
-        } else {
-          healthy = false
-          message = "Claude Code Proxy: stopped"
-        }
-
-        if lastMessage != message {
-          lastMessage = message
-          self.updateStatusItem(healthy: healthy, statusMessage: message)
-          if !processUp && urlUp {
-            NSLog(
-              "ClaudeCodeRoutes: proxy URL is up but the managed process is not running (another instance may own the port)"
-            )
-          }
-        }
-
-        try? await Task.sleep(for: interval)
-      }
-    }
-  }
+  private var proxyConfigurationResolver: ProxyConfigurationResolver?
+  private var healthChecker: ProxyHealthChecker?
 
   func applicationDidFinishLaunching(_ notification: Notification) {
     NSApp.setActivationPolicy(.accessory)
     installSignalHandlers()
 
-    // check if the claude code proxy binary is executable
-    if !FileManager.default.isExecutableFile(atPath: claudeCodeProxyPath.path) {
-      installStatusItem(healthy: false, statusMessage: "Proxy: claude-code-proxy not found")
+    let resolver = ProxyConfigurationResolver(
+      defaultProxyPath: URL(fileURLWithPath: Constants.claudeCodeProxyPath),
+      defaultOnePasswordExecutable: URL(fileURLWithPath: "/opt/homebrew/bin/op"),
+      onePasswordReference: Constants.mergeGatewayOnePasswordItem,
+      secretReader: OnePasswordSecretReader(runner: FoundationCommandRunner())
+    )
+    proxyConfigurationResolver = resolver
+
+    let proxyConfiguration: ProxyConfiguration
+    do {
+      proxyConfiguration = try resolver.resolve(
+        environment: ProcessInfo.processInfo.environment
+      )
+    } catch {
+      installStatusItem(healthy: false, statusMessage: error.localizedDescription)
       presentAlert(
-        title: "Claude Code Proxy not found",
-        message:
-          "Claude Code Proxy was not found at \(claudeCodeProxyPath.path). Set the CLAUDE_CODE_PROXY_PATH environment variable to the path to the claude-code-proxy binary or use the default path of \(Constants.claudeCodeProxyPath)."
+        title: "Failed to resolve proxy configuration",
+        message: error.localizedDescription
       )
       return
     }
 
-    // try to get the merge gateway API key from the environment or one password
-    guard
-      let mergeGatewayAPIKey =
-        getMergeGatewayAPIKeyFromEnvironment ?? getMergeGatewayAPIKeyFromOnePassword
-    else {
-      installStatusItem(healthy: false, statusMessage: "Merge Gateway: API key not found")
-      presentAlert(
-        title: "Merge Gateway API key not found",
-        message:
-          "Merge Gateway API key was not found. Set the MERGE_GATEWAY_API_KEY environment variable or use the default path of \(Constants.mergeGatewayOnePasswordItem)."
-      )
-      return
-    }
-
-    let proxyURL = claudeCodeProxyPath
+    let proxyURL = proxyConfiguration.proxyPath
     let arguments = [
       "serve",
       "--no-monitor",
@@ -172,7 +74,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       arguments: arguments,
       runner: FoundationProcessRunner(),
       environment: [
-        "CCP_MERGE_AUTH_TOKEN": mergeGatewayAPIKey
+        "CCP_MERGE_AUTH_TOKEN": proxyConfiguration.apiKey
       ]
     )
     self.runtime = runtime
@@ -191,7 +93,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     installStatusItem(healthy: false, statusMessage: "Claude Code Proxy: starting…")
-    monitorProxyHealth()
+
+    guard let proxyHealthURL = URL(string: Constants.claudeCodeProxyURL) else {
+      return
+    }
+    let healthChecker = ProxyHealthChecker(proxyURL: proxyHealthURL) {
+      [weak self] healthy, message in
+      self?.updateStatusItem(healthy: healthy, statusMessage: message)
+    }
+    self.healthChecker = healthChecker
+    healthChecker.monitor(runtime: runtime, interval: Constants.proxyReadyPollInterval)
   }
 
   func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
@@ -204,8 +115,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   private func stopProxy() {
-    healthPollTask?.cancel()
-    healthPollTask = nil
+    healthChecker?.stop()
+    healthChecker = nil
     runtime?.stop()
     runtime = nil
   }
@@ -241,7 +152,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     alert.runModal()
   }
 
-  /// `kill <pid>` delivers SIGTERM; wire it through AppKit terminate so the stub is reaped.
+  /// `kill <pid>` delivers SIGTERM;.
   private func installSignalHandlers() {
     for sig in [SIGTERM, SIGINT] {
       signal(sig, SIG_IGN)
