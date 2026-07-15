@@ -1,11 +1,3 @@
-// Plan to split out ClaudeCodeRoutes to different seams
-//
-// - ClaudeCodeRoutesApp - calls the resolver, constructs ProxyRuntime, presents alerts.
-// - ProxyConfiguration.swift: resolves environment precedence and returns configuration.
-// - CommandRunning.swift: hides Process and output capture.
-// - OnePasswordSecretReader.swift: knows how to invoke op.
-// - ProxyRuntime: remains unaware of environment variables and 1Password.
-
 import AppKit
 import Foundation
 import ProxyRuntime
@@ -64,13 +56,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
       return
     }
 
-    let proxyURL = proxyConfiguration.proxyPath
+    let proxyExecutableURL = proxyConfiguration.proxyPath
     let arguments = [
       "serve",
       "--no-monitor",
     ]
     let runtime = ProxyRuntime(
-      executableURL: proxyURL,
+      executableURL: proxyExecutableURL,
       arguments: arguments,
       runner: FoundationProcessRunner(),
       environment: [
