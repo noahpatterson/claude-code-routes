@@ -25,8 +25,8 @@ struct ProxySessionTests {
 
     try session.apply(
       ProxyLaunchPlan(
-        executableURL: first,
-        healthURL: URL(string: "http://127.0.0.1:1/")!,
+        executableProxyPath: first,
+        healthProxyURL: URL(string: "http://127.0.0.1:1/")!,
         apiKey: "key-1"
       )
     )
@@ -36,8 +36,8 @@ struct ProxySessionTests {
 
     try session.apply(
       ProxyLaunchPlan(
-        executableURL: second,
-        healthURL: URL(string: "http://127.0.0.1:2/")!,
+        executableProxyPath: second,
+        healthProxyURL: URL(string: "http://127.0.0.1:2/")!,
         apiKey: "key-2"
       )
     )

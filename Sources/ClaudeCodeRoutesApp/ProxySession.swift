@@ -4,8 +4,7 @@ import ProxyRuntime
 @MainActor
 final class ProxySession {
   private let processRunner: any ProcessRunning
-  private let makeHealthChecker:
-    (URL, @escaping (Bool, String) -> Void) -> any ProxyHealthChecking
+  private let makeHealthChecker: (URL, @escaping (Bool, String) -> Void) -> any ProxyHealthChecking
   private let onStatusChange: (Bool, String) -> Void
   private let pollInterval: Duration
   private let serveArguments: [String]
@@ -31,7 +30,7 @@ final class ProxySession {
     stop()
 
     let runtime = ProxyRuntime(
-      executableURL: plan.executableURL,
+      executableURL: plan.executableProxyPath,
       arguments: serveArguments,
       runner: processRunner,
       environment: ["CCP_MERGE_AUTH_TOKEN": plan.apiKey]
@@ -39,7 +38,7 @@ final class ProxySession {
     try runtime.start()
     self.runtime = runtime
 
-    let healthChecker = makeHealthChecker(plan.healthURL, onStatusChange)
+    let healthChecker = makeHealthChecker(plan.healthProxyURL, onStatusChange)
     healthChecker.monitor(runtime: runtime, interval: pollInterval)
     self.healthChecker = healthChecker
   }
