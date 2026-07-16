@@ -1,13 +1,14 @@
 import Foundation
 
 protocol SecretReader {
-  func read(executable: URL, reference: String) throws -> String
+  func read(reference: String) throws -> String
 }
 
 struct OnePasswordSecretReader: SecretReader {
   let runner: any CommandRunning
+  let executable: URL
 
-  func read(executable: URL, reference: String) throws -> String {
+  func read(reference: String) throws -> String {
     try runner.runCapturingOutput(
       executable: executable,
       arguments: ["read", reference]

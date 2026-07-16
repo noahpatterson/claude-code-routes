@@ -19,8 +19,8 @@ struct ProxyHealthCheckerTests {
 
     var messages: [String] = []
     let proxyURL = URL(string: "http://127.0.0.1:18765/")!
-    let checker = ProxyHealthChecker(proxyURL: proxyURL, probe: probe) { _, message in
-      messages.append(message)
+    let checker = ProxyHealthChecker(proxyURL: proxyURL, probe: probe) { status in
+      messages.append(status.displayMessage)
     }
 
     checker.monitor(runtime: runtime, interval: .milliseconds(5))
@@ -31,8 +31,8 @@ struct ProxyHealthCheckerTests {
     }
     checker.stop()
 
-    #expect(messages.first == ProxyHealthReadinessMessage.starting.rawValue)
-    #expect(messages.contains(ProxyHealthReadinessMessage.running.rawValue))
+    #expect(messages.first == ProxyStatus.starting.displayMessage)
+    #expect(messages.contains(ProxyStatus.running.displayMessage))
     #expect(probe.callCount >= 2)
     #expect(probe.lastURL == proxyURL)
   }
@@ -68,7 +68,6 @@ final class HealthTestProcessRunner: ProcessRunning, @unchecked Sendable {
 }
 
 final class HealthTestRunningProcess: RunningProcess, @unchecked Sendable {
-  var processIdentifier: Int32 { 1 }
   var isRunning: Bool { true }
   func terminate() {}
 }

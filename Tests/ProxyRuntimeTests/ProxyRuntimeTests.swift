@@ -106,7 +106,6 @@ final class FakeRunningProcess: RunningProcess, @unchecked Sendable {
   private(set) var terminateCallCount = 0
   private var running = true
 
-  var processIdentifier: Int32 { 42 }
   var isRunning: Bool { running }
 
   func terminate() {

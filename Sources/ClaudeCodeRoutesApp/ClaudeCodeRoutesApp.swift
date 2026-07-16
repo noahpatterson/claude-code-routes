@@ -4,9 +4,7 @@ import ProxyRuntime
 import SwiftUI
 
 private enum Constants {
-  static let claudeCodeProxyPath = "/Users/testuser/.local/bin/claude-code-proxy"
-  static let claudeCodeProxyURL = "http://127.0.0.1:18765/"
-  static let mergeGatewayOnePasswordItem = "op://Personal/Merge/apikey"
+  static let defaultOnePasswordExecutable = "/opt/homebrew/bin/op"
   static let proxyReadyPollInterval: Duration = .seconds(1)
 }
 
@@ -15,7 +13,8 @@ struct ClaudeCodeRoutesApp: App {
   @NSApplicationDelegateAdaptor(AppDelegate.self) private var appDelegate
 
   var body: some Scene {
-    // Settings scene keeps the SwiftUI app lifecycle alive for a menu-bar-only app.
+    // Keeps the SwiftUI app lifecycle alive for a menu-bar-only app.
+    // Settings UI is an owned NSPanel (SwiftUI Settings never materializes here).
     Settings {
       EmptyView()
     }
@@ -25,92 +24,88 @@ struct ClaudeCodeRoutesApp: App {
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate {
   private var statusItem: NSStatusItem?
-  private var runtime: ProxyRuntime?
   private var signalSources: [DispatchSourceSignal] = []
-  private var proxyConfigurationResolver: ProxyConfigurationResolver?
-  private var healthChecker: ProxyHealthChecker?
+  private var session: ProxySession?
+  private var settingsPresenter: SettingsWindowPresenter?
+  private let settingsStore = AppSettingsStore()
+  private(set) lazy var settingsModel = SettingsModel(store: settingsStore)
 
   func applicationDidFinishLaunching(_ notification: Notification) {
     NSApp.setActivationPolicy(.accessory)
     installSignalHandlers()
 
-    let resolver = ProxyConfigurationResolver(
-      defaultProxyPath: URL(fileURLWithPath: Constants.claudeCodeProxyPath),
-      defaultOnePasswordExecutable: URL(fileURLWithPath: "/opt/homebrew/bin/op"),
-      onePasswordReference: Constants.mergeGatewayOnePasswordItem,
-      secretReader: OnePasswordSecretReader(runner: FoundationCommandRunner())
-    )
-    proxyConfigurationResolver = resolver
-
-    let proxyConfiguration: ProxyConfiguration
-    do {
-      proxyConfiguration = try resolver.resolve(
-        environment: ProcessInfo.processInfo.environment
-      )
-    } catch {
-      installStatusItem(healthy: false, statusMessage: error.localizedDescription)
-      presentAlert(
-        title: "Failed to resolve proxy configuration",
-        message: error.localizedDescription
-      )
-      return
+    settingsModel.onSave = { [weak self] saved in
+      self?.applySettings(saved, presentErrors: true)
     }
+    settingsPresenter = SettingsWindowPresenter(model: settingsModel)
 
-    let proxyExecutableURL = proxyConfiguration.proxyPath
-    let arguments = [
-      "serve",
-      "--no-monitor",
-    ]
-    let runtime = ProxyRuntime(
-      executableURL: proxyExecutableURL,
-      arguments: arguments,
-      runner: FoundationProcessRunner(),
-      environment: [
-        "CCP_MERGE_AUTH_TOKEN": proxyConfiguration.apiKey
-      ]
+    let executableResolver = OnePasswordExecutableResolver(
+      defaultExecutable: URL(fileURLWithPath: Constants.defaultOnePasswordExecutable)
     )
-    self.runtime = runtime
+    let commandRunner = FoundationCommandRunner()
 
-    do {
-      try runtime.start()
-    } catch {
-      installStatusItem(healthy: false, statusMessage: "Claude Code Proxy: failed to start")
-      presentAlert(
-        title: "Claude Code Proxy failed to start",
-        message: """
-          Claude Code Proxy failed to start: \(error.localizedDescription).
-          """
-      )
-      return
-    }
+    let session = ProxySession(
+      makePlanner: { settings, environment in
+        let executable = try executableResolver.resolve(
+          settings: settings,
+          environment: environment
+        )
+        return ProxyLaunchPlanner(
+          secretReader: OnePasswordSecretReader(
+            runner: commandRunner,
+            executable: executable
+          )
+        )
+      },
+      processRunner: FoundationProcessRunner(),
+
+      makeHealthChecker: { url, probe, onChange in
+        ProxyHealthChecker(
+          proxyURL: url,
+          probe: probe,
+          onStatusChange: { status in
+            onChange(status)
+          })
+      },
+      probe: URLSessionHTTPProbe(),
+      pollInterval: Constants.proxyReadyPollInterval,
+      onStatusChange: { [weak self] status in
+        self?.updateStatusItem(healthy: status.isHealthy, statusMessage: status.displayMessage)
+      }
+    )
+    self.session = session
 
     installStatusItem(healthy: false, statusMessage: "Claude Code Proxy: starting…")
-
-    guard let proxyHealthURL = URL(string: Constants.claudeCodeProxyURL) else {
-      return
-    }
-    let healthChecker = ProxyHealthChecker(proxyURL: proxyHealthURL) {
-      [weak self] healthy, message in
-      self?.updateStatusItem(healthy: healthy, statusMessage: message)
-    }
-    self.healthChecker = healthChecker
-    healthChecker.monitor(runtime: runtime, interval: Constants.proxyReadyPollInterval)
+    applySettings(settingsStore.load(), presentErrors: true)
   }
 
   func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
-    stopProxy()
+    session?.stop()
     return .terminateNow
   }
 
   func applicationWillTerminate(_ notification: Notification) {
-    stopProxy()
+    session?.stop()
   }
 
-  private func stopProxy() {
-    healthChecker?.stop()
-    healthChecker = nil
-    runtime?.stop()
-    runtime = nil
+  private func applySettings(
+    _ settings: AppSettings,
+    presentErrors: Bool
+  ) {
+    do {
+      try session?.apply(
+        settings: settings,
+        environment: ProcessInfo.processInfo.environment
+      )
+    } catch {
+      updateStatusItem(healthy: false, statusMessage: error.localizedDescription)
+      if presentErrors {
+        presentAlert(
+          title: "Failed to apply proxy settings",
+          message: error.localizedDescription
+        )
+      }
+    }
   }
 
   private func installStatusItem(healthy: Bool, statusMessage: String) {
@@ -127,12 +122,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let menu = NSMenu()
     menu.addItem(NSMenuItem(title: statusMessage, action: nil, keyEquivalent: ""))
     menu.addItem(NSMenuItem.separator())
+    let settingsItem = NSMenuItem(
+      title: "Settings…",
+      action: #selector(openSettings),
+      keyEquivalent: ","
+    )
+    settingsItem.target = self
+    menu.addItem(settingsItem)
+    menu.addItem(NSMenuItem.separator())
     menu.addItem(
       NSMenuItem(
         title: "Quit Claude Code Routes", action: #selector(NSApplication.terminate(_:)),
         keyEquivalent: "q")
     )
     item.menu = menu
+  }
+
+  @objc private func openSettings() {
+    settingsPresenter?.open()
   }
 
   private func presentAlert(title: String, message: String) {
@@ -144,7 +151,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     alert.runModal()
   }
 
-  /// `kill <pid>` delivers SIGTERM;.
+  /// `kill <pid>` delivers SIGTERM.
   private func installSignalHandlers() {
     for sig in [SIGTERM, SIGINT] {
       signal(sig, SIG_IGN)

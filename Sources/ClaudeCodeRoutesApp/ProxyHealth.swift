@@ -1,6 +1,21 @@
 import Foundation
 import ProxyRuntime
 
+struct ProxyReadiness {
+  private(set) var hasBeenReady = false
+
+  mutating func observe(urlUp: Bool, processUp: Bool) -> ProxyStatus {
+    if urlUp {
+      hasBeenReady = true
+      return .running
+    } else if processUp {
+      return hasBeenReady ? .notReady : .starting
+    } else {
+      return .stopped
+    }
+  }
+}
+
 @MainActor
 protocol ProxyHealthChecking: AnyObject {
   func monitor(runtime: ProxyRuntime, interval: Duration)
@@ -15,13 +30,13 @@ protocol ProxyHealthChecking: AnyObject {
 final class ProxyHealthChecker: ProxyHealthChecking {
   private let probe: HTTPProbe
   private let proxyURL: URL
-  private let onStatusChange: (Bool, String) -> Void
+  private let onStatusChange: (ProxyStatus) -> Void
   private var healthPollTask: Task<Void, Never>?
 
   init(
     proxyURL: URL,
     probe: HTTPProbe = URLSessionHTTPProbe(),
-    onStatusChange: @escaping (Bool, String) -> Void
+    onStatusChange: @escaping (ProxyStatus) -> Void
   ) {
     self.proxyURL = proxyURL
     self.probe = probe
@@ -35,19 +50,18 @@ final class ProxyHealthChecker: ProxyHealthChecking {
       let probe = self.probe
       let proxyURL = self.proxyURL
       var lastMessage: String?
-      var sawReady = false
-      let readinessChecker = FoundationProxyHealthReadiness()
+      var readinessChecker = ProxyReadiness()
 
       while !Task.isCancelled {
         let processUp = runtime.isHealthy
         let urlUp = await probe.isUp(url: proxyURL)
 
-        let status = readinessChecker.readiness(
-          urlUp: urlUp, processUp: processUp, sawReady: &sawReady)
+        let status = readinessChecker.observe(
+          urlUp: urlUp, processUp: processUp)
 
-        if lastMessage != status.message.rawValue {
-          lastMessage = status.message.rawValue
-          self.onStatusChange(status.healthy, status.message.rawValue)
+        if lastMessage != status.displayMessage {
+          lastMessage = status.displayMessage
+          self.onStatusChange(status)
           if !processUp && urlUp {
             NSLog(
               "ClaudeCodeRoutes: proxy URL is up but the managed process is not running (another instance may own the port)"

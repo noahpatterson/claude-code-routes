@@ -1,7 +1,6 @@
 import Foundation
 
 public protocol RunningProcess: AnyObject {
-  var processIdentifier: Int32 { get }
   var isRunning: Bool { get }
   func terminate()
 }
@@ -89,10 +88,6 @@ final class FoundationRunningProcess: RunningProcess {
 
   init(process: Process) {
     self.process = process
-  }
-
-  var processIdentifier: Int32 {
-    process.processIdentifier
   }
 
   var isRunning: Bool {
