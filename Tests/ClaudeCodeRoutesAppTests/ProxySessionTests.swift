@@ -10,36 +10,46 @@ struct ProxySessionTests {
 
   @Test("apply starts runtime with plan; second apply restarts with new plan")
   func applyRestartsWithNewPlan() throws {
-    let runner = RecordingProcessRunner()
-    let session = ProxySession(
-      processRunner: runner,
-      makeHealthChecker: { url, onChange in
-        FakeHealthChecker(proxyURL: url, onStatusChange: onChange)
-      },
-      onStatusChange: { _, _ in },
-      pollInterval: .seconds(60)
-    )
-
     let first = createEmptyExecutableFile(suffix: "first")
     let second = createEmptyExecutableFile(suffix: "second")
+    let runner = RecordingProcessRunner()
+    let session = ProxySession(
+      planner: ProxyLaunchPlanner(
+        defaultOnePasswordExecutable: first,
+        secretReader: OnePasswordSecretReader(runner: FoundationCommandRunner())
+      ),
+      processRunner: runner,
+      makeHealthChecker: { url, _, onChange in
+        FakeHealthChecker(proxyURL: url, onStatusChange: onChange)
+      },
+      probe: URLSessionHTTPProbe(),
+      pollInterval: .seconds(60),
+      onStatusChange: { status in
+        // onChange(status)
+      }
+    )
 
     try session.apply(
-      ProxyLaunchPlan(
-        executableProxyPath: first,
-        healthProxyURL: URL(string: "http://127.0.0.1:1/")!,
-        apiKey: "key-1"
-      )
+      settings: AppSettings(
+        claudeCodeProxyPath: first.path,
+        claudeCodeProxyURL: "http://127.0.0.1:1/",
+        mergeGatewayOnePasswordItem: "key-1",
+        onePasswordExecutable: second.path
+      ),
+      environment: ["MERGE_GATEWAY_API_KEY": "key-1"]
     )
     #expect(runner.startedExecutableURLs == [first])
     #expect(runner.startedEnvironments == [["CCP_MERGE_AUTH_TOKEN": "key-1"]])
     #expect(runner.terminatedCount == 0)
 
     try session.apply(
-      ProxyLaunchPlan(
-        executableProxyPath: second,
-        healthProxyURL: URL(string: "http://127.0.0.1:2/")!,
-        apiKey: "key-2"
-      )
+      settings: AppSettings(
+        claudeCodeProxyPath: second.path,
+        claudeCodeProxyURL: "http://127.0.0.1:2/",
+        mergeGatewayOnePasswordItem: "key-2",
+        onePasswordExecutable: first.path
+      ),
+      environment: ["MERGE_GATEWAY_API_KEY": "key-2"]
     )
     #expect(runner.startedExecutableURLs == [first, second])
     #expect(
@@ -58,11 +68,11 @@ struct ProxySessionTests {
 @MainActor
 final class FakeHealthChecker: ProxyHealthChecking {
   let proxyURL: URL
-  let onStatusChange: (Bool, String) -> Void
+  let onStatusChange: (ProxyStatus) -> Void
   private(set) var monitorCount = 0
   private(set) var stopCount = 0
 
-  init(proxyURL: URL, onStatusChange: @escaping (Bool, String) -> Void) {
+  init(proxyURL: URL, onStatusChange: @escaping (ProxyStatus) -> Void) {
     self.proxyURL = proxyURL
     self.onStatusChange = onStatusChange
   }

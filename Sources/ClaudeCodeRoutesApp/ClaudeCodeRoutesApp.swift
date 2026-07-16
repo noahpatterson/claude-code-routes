@@ -26,7 +26,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private var statusItem: NSStatusItem?
   private var signalSources: [DispatchSourceSignal] = []
   private var session: ProxySession?
-  private var launchPlanner: ProxyLaunchPlanner?
   private var settingsPresenter: SettingsWindowPresenter?
   private let settingsStore = AppSettingsStore()
   private(set) lazy var settingsModel = SettingsModel(store: settingsStore)
@@ -45,21 +44,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         fileURLWithPath: Constants.defaultOnePasswordExecutable),
       secretReader: OnePasswordSecretReader(runner: FoundationCommandRunner())
     )
-    launchPlanner = planner
 
     let session = ProxySession(
+      planner: planner,
       processRunner: FoundationProcessRunner(),
-      makeHealthChecker: { url, onChange in
+
+      makeHealthChecker: { url, probe, onChange in
         ProxyHealthChecker(
           proxyURL: url,
+          probe: probe,
           onStatusChange: { status in
-            onChange(status.isHealthy, status.displayMessage)
+            onChange(status)
           })
       },
-      onStatusChange: { [weak self] healthy, message in
-        self?.updateStatusItem(healthy: healthy, statusMessage: message)
-      },
-      pollInterval: Constants.proxyReadyPollInterval
+      probe: URLSessionHTTPProbe(),
+      pollInterval: Constants.proxyReadyPollInterval,
+      onStatusChange: { [weak self] status in
+        self?.updateStatusItem(healthy: status.isHealthy, statusMessage: status.displayMessage)
+      }
     )
     self.session = session
 
@@ -76,16 +78,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     session?.stop()
   }
 
-  private func applySettings(_ settings: AppSettings, presentErrors: Bool) {
-    guard let launchPlanner, let session else { return }
-
+  private func applySettings(
+    _ settings: AppSettings,
+    presentErrors: Bool
+  ) {
     do {
-      let plan = try launchPlanner.plan(
+      try session?.apply(
         settings: settings,
         environment: ProcessInfo.processInfo.environment
       )
-      try session.apply(plan)
-      updateStatusItem(healthy: false, statusMessage: "Claude Code Proxy: starting…")
     } catch {
       updateStatusItem(healthy: false, statusMessage: error.localizedDescription)
       if presentErrors {

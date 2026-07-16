@@ -3,44 +3,46 @@ import ProxyRuntime
 
 @MainActor
 final class ProxySession {
+  private let planner: ProxyLaunchPlanner
   private let processRunner: any ProcessRunning
-  private let makeHealthChecker: (URL, @escaping (Bool, String) -> Void) -> any ProxyHealthChecking
-  private let onStatusChange: (Bool, String) -> Void
+  private let probe: any HTTPProbe
   private let pollInterval: Duration
-  private let serveArguments: [String]
-
+  private let onStatusChange: (ProxyStatus) -> Void
+  private let makeHealthChecker:
+    (URL, any HTTPProbe, @escaping (ProxyStatus) -> Void) -> any ProxyHealthChecking
   private var runtime: ProxyRuntime?
   private var healthChecker: (any ProxyHealthChecking)?
 
   init(
+    planner: ProxyLaunchPlanner,
     processRunner: any ProcessRunning,
-    makeHealthChecker: @escaping (URL, @escaping (Bool, String) -> Void) -> any ProxyHealthChecking,
-    onStatusChange: @escaping (Bool, String) -> Void,
+    makeHealthChecker: @escaping (
+      URL, any HTTPProbe, @escaping (ProxyStatus) -> Void
+    ) -> any ProxyHealthChecking,
+    probe: any HTTPProbe,
     pollInterval: Duration,
-    serveArguments: [String] = ["serve", "--no-monitor"]
+    onStatusChange: @escaping (ProxyStatus) -> Void,
   ) {
+    self.planner = planner
     self.processRunner = processRunner
     self.makeHealthChecker = makeHealthChecker
-    self.onStatusChange = onStatusChange
+    self.probe = probe
     self.pollInterval = pollInterval
-    self.serveArguments = serveArguments
+    self.onStatusChange = onStatusChange
   }
 
-  func apply(_ plan: ProxyLaunchPlan) throws {
-    stop()
-
-    let runtime = ProxyRuntime(
-      executableURL: plan.executableProxyPath,
-      arguments: serveArguments,
-      runner: processRunner,
-      environment: ["CCP_MERGE_AUTH_TOKEN": plan.apiKey]
+  func apply(
+    settings: AppSettings,
+    environment: [String: String]
+  ) throws {
+    // Plan first so invalid settings don't stop a healthy proxy.
+    let plan = try planner.plan(
+      settings: settings,
+      environment: environment
     )
-    try runtime.start()
-    self.runtime = runtime
 
-    let healthChecker = makeHealthChecker(plan.healthProxyURL, onStatusChange)
-    healthChecker.monitor(runtime: runtime, interval: pollInterval)
-    self.healthChecker = healthChecker
+    stop()
+    try start(plan)
   }
 
   func stop() {
@@ -48,5 +50,35 @@ final class ProxySession {
     healthChecker = nil
     runtime?.stop()
     runtime = nil
+
+    onStatusChange(.stopped)
+  }
+
+  private func start(_ plan: ProxyLaunchPlan) throws {
+    let runtime = makeRuntime(for: plan)
+    try runtime.start()
+    self.runtime = runtime
+
+    startMonitoring(runtime: runtime, healthURL: plan.healthProxyURL)
+  }
+
+  private func makeRuntime(for plan: ProxyLaunchPlan) -> ProxyRuntime {
+    ProxyRuntime(
+      executableURL: plan.executableProxyPath,
+      arguments: ["serve", "--no-monitor"],
+      runner: processRunner,
+      environment: ["CCP_MERGE_AUTH_TOKEN": plan.apiKey]
+    )
+  }
+
+  private func startMonitoring(
+    runtime: ProxyRuntime,
+    healthURL: URL
+  ) {
+    // Construct and start the checker.
+    let healthChecker = makeHealthChecker(healthURL, probe, onStatusChange)
+    healthChecker.monitor(runtime: runtime, interval: pollInterval)
+    self.healthChecker = healthChecker
+    onStatusChange(.starting)
   }
 }
