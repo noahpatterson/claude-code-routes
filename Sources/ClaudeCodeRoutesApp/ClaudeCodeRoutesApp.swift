@@ -50,7 +50,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let session = ProxySession(
       processRunner: FoundationProcessRunner(),
       makeHealthChecker: { url, onChange in
-        ProxyHealthChecker(proxyURL: url, onStatusChange: onChange)
+        ProxyHealthChecker(
+          proxyURL: url,
+          onStatusChange: { status in
+            onChange(status.isHealthy, status.displayMessage)
+          })
       },
       onStatusChange: { [weak self] healthy, message in
         self?.updateStatusItem(healthy: healthy, statusMessage: message)

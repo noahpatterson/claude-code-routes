@@ -15,13 +15,13 @@ protocol ProxyHealthChecking: AnyObject {
 final class ProxyHealthChecker: ProxyHealthChecking {
   private let probe: HTTPProbe
   private let proxyURL: URL
-  private let onStatusChange: (Bool, String) -> Void
+  private let onStatusChange: (ProxyStatus) -> Void
   private var healthPollTask: Task<Void, Never>?
 
   init(
     proxyURL: URL,
     probe: HTTPProbe = URLSessionHTTPProbe(),
-    onStatusChange: @escaping (Bool, String) -> Void
+    onStatusChange: @escaping (ProxyStatus) -> Void
   ) {
     self.proxyURL = proxyURL
     self.probe = probe
@@ -47,7 +47,7 @@ final class ProxyHealthChecker: ProxyHealthChecking {
 
         if lastMessage != status.message.rawValue {
           lastMessage = status.message.rawValue
-          self.onStatusChange(status.healthy, status.message.rawValue)
+          self.onStatusChange(status.healthy ? .running : .notReady)
           if !processUp && urlUp {
             NSLog(
               "ClaudeCodeRoutes: proxy URL is up but the managed process is not running (another instance may own the port)"

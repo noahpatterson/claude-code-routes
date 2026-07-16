@@ -19,8 +19,8 @@ struct ProxyHealthCheckerTests {
 
     var messages: [String] = []
     let proxyURL = URL(string: "http://127.0.0.1:18765/")!
-    let checker = ProxyHealthChecker(proxyURL: proxyURL, probe: probe) { _, message in
-      messages.append(message)
+    let checker = ProxyHealthChecker(proxyURL: proxyURL, probe: probe) { status in
+      messages.append(status.displayMessage)
     }
 
     checker.monitor(runtime: runtime, interval: .milliseconds(5))

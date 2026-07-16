@@ -4,37 +4,23 @@ import SwiftUI
 
 @MainActor
 final class SettingsModel: ObservableObject {
-  @Published var claudeCodeProxyPath: String
-  @Published var claudeCodeProxyURL: String
-  @Published var mergeGatewayOnePasswordItem: String
-  @Published var onePasswordExecutable: String
+  @Published var settings: AppSettings
   private let store: AppSettingsStore
   var onSave: ((AppSettings) -> Void)?
 
   init(store: AppSettingsStore) {
     self.store = store
     let loaded = store.load()
-    self.claudeCodeProxyPath = loaded.claudeCodeProxyPath
-    self.claudeCodeProxyURL = loaded.claudeCodeProxyURL
-    self.mergeGatewayOnePasswordItem = loaded.mergeGatewayOnePasswordItem
-    self.onePasswordExecutable = loaded.onePasswordExecutable
+    self.settings = loaded
   }
 
   var current: AppSettings {
-    AppSettings(
-      claudeCodeProxyPath: claudeCodeProxyPath,
-      claudeCodeProxyURL: claudeCodeProxyURL,
-      mergeGatewayOnePasswordItem: mergeGatewayOnePasswordItem,
-      onePasswordExecutable: onePasswordExecutable
-    )
+    settings
   }
 
   func reloadFromStore() {
     let loaded = store.load()
-    claudeCodeProxyPath = loaded.claudeCodeProxyPath
-    claudeCodeProxyURL = loaded.claudeCodeProxyURL
-    mergeGatewayOnePasswordItem = loaded.mergeGatewayOnePasswordItem
-    onePasswordExecutable = loaded.onePasswordExecutable
+    settings = loaded
   }
 
   func save() {
@@ -49,16 +35,16 @@ struct SettingsView: View {
 
   var body: some View {
     Form {
-      TextField("claudeCodeProxyPath", text: $model.claudeCodeProxyPath)
-      TextField("claudeCodeProxyURL", text: $model.claudeCodeProxyURL)
+      TextField("claudeCodeProxyPath", text: $model.settings.claudeCodeProxyPath)
+      TextField("claudeCodeProxyURL", text: $model.settings.claudeCodeProxyURL)
       TextField(
         "mergeGatewayOnePasswordItem",
-        text: $model.mergeGatewayOnePasswordItem,
+        text: $model.settings.mergeGatewayOnePasswordItem,
         prompt: Text("op://Personal/ITEM/KEY")
       )
       TextField(
         "onePasswordExecutable",
-        text: $model.onePasswordExecutable,
+        text: $model.settings.onePasswordExecutable,
       )
       Button("Save & Restart Proxy") {
         model.save()
