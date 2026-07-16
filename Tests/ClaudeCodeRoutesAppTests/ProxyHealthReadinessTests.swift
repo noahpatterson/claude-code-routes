@@ -2,52 +2,73 @@ import Testing
 
 @testable import ClaudeCodeRoutesApp
 
-@Suite("ProxyHealth readiness")
-struct ProxyHealthReadinessTests {
+@Suite("ProxyReadiness")
+struct ProxyReadinessTests {
 
-  @Test("url up is healthy and running even when process is down and latch is clear")
+  @Test("URL up is running and records that readiness was reached")
   func urlUpIsRunning() {
-    var sawReady = false
-    let status = FoundationProxyHealthReadiness().readiness(
-      urlUp: true, processUp: false, sawReady: &sawReady)
-    #expect(status.healthy == true)
-    #expect(status.message == .running)
-    #expect(sawReady == true)
+    var readiness = ProxyReadiness()
+
+    let status = readiness.observe(
+      urlUp: true,
+      processUp: false
+    )
+
+    #expect(status == .running)
+    #expect(readiness.hasBeenReady)
   }
 
   @Test("process up before first ready is starting")
   func processUpBeforeReadyIsStarting() {
-    var sawReady = false
-    let status = FoundationProxyHealthReadiness().readiness(
-      urlUp: false, processUp: true, sawReady: &sawReady)
-    #expect(status.healthy == false)
-    #expect(status.message == .starting)
+    var readiness = ProxyReadiness()
+
+    let status = readiness.observe(
+      urlUp: false,
+      processUp: true
+    )
+
+    #expect(status == .starting)
+    #expect(!readiness.hasBeenReady)
   }
 
-  @Test("process up after having been ready is not ready")
+  @Test("process up after readiness was lost is not ready")
   func processUpAfterReadyIsNotReady() {
-    var sawReady = true
-    let status = FoundationProxyHealthReadiness().readiness(
-      urlUp: false, processUp: true, sawReady: &sawReady)
-    #expect(status.healthy == false)
-    #expect(status.message == .notReady)
+    var readiness = ProxyReadiness()
+
+    _ = readiness.observe(urlUp: true, processUp: true)
+
+    let status = readiness.observe(
+      urlUp: false,
+      processUp: true
+    )
+
+    #expect(status == .notReady)
+    #expect(readiness.hasBeenReady)
   }
 
-  @Test("process and url both down is stopped")
-  func processAndUrlDownIsStopped() {
-    var sawReady = false
-    let status = FoundationProxyHealthReadiness().readiness(
-      urlUp: false, processUp: false, sawReady: &sawReady)
-    #expect(status.healthy == false)
-    #expect(status.message == .stopped)
+  @Test("process and URL both down is stopped")
+  func processAndURLDownIsStopped() {
+    var readiness = ProxyReadiness()
+
+    let status = readiness.observe(
+      urlUp: false,
+      processUp: false
+    )
+
+    #expect(status == .stopped)
   }
 
-  @Test("stopped ignores the sawReady latch")
-  func stoppedIgnoresSawReadyLatch() {
-    var sawReady = true
-    let status = FoundationProxyHealthReadiness().readiness(
-      urlUp: false, processUp: false, sawReady: &sawReady)
-    #expect(status.healthy == false)
-    #expect(status.message == .stopped)
+  @Test("stopped remains stopped after prior readiness")
+  func stoppedIgnoresReadinessLatch() {
+    var readiness = ProxyReadiness()
+
+    _ = readiness.observe(urlUp: true, processUp: true)
+
+    let status = readiness.observe(
+      urlUp: false,
+      processUp: false
+    )
+
+    #expect(status == .stopped)
   }
 }

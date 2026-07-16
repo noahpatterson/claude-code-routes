@@ -31,8 +31,8 @@ struct ProxyHealthCheckerTests {
     }
     checker.stop()
 
-    #expect(messages.first == ProxyHealthReadinessMessage.starting.rawValue)
-    #expect(messages.contains(ProxyHealthReadinessMessage.running.rawValue))
+    #expect(messages.first == ProxyStatus.starting.displayMessage)
+    #expect(messages.contains(ProxyStatus.running.displayMessage))
     #expect(probe.callCount >= 2)
     #expect(probe.lastURL == proxyURL)
   }
@@ -68,7 +68,6 @@ final class HealthTestProcessRunner: ProcessRunning, @unchecked Sendable {
 }
 
 final class HealthTestRunningProcess: RunningProcess, @unchecked Sendable {
-  var processIdentifier: Int32 { 1 }
   var isRunning: Bool { true }
   func terminate() {}
 }
