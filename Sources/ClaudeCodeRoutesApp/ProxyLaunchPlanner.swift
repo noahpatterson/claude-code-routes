@@ -57,7 +57,9 @@ struct ProxyLaunchPlanner {
 
   private func resolveApiKey(settings: AppSettings, environment: [String: String]) throws -> String
   {
-    if let apiKey = environment["MERGE_GATEWAY_API_KEY"] {
+    if let apiKey = environment["MERGE_GATEWAY_API_KEY"]?.trimmingCharacters(
+      in: .whitespacesAndNewlines), !apiKey.isEmpty
+    {
       return apiKey
     }
 

@@ -7,7 +7,8 @@ struct AppSettings: Equatable, Sendable {
   var onePasswordExecutable: String
 
   static let `default` = AppSettings(
-    claudeCodeProxyPath: "/Users/testuser/.local/bin/claude-code-proxy",
+    claudeCodeProxyPath: FileManager.default.homeDirectoryForCurrentUser
+      .appendingPathComponent(".local/bin/claude-code-proxy").path,
     claudeCodeProxyURL: "http://127.0.0.1:18765/",
     mergeGatewayOnePasswordItem: "",
     onePasswordExecutable: "/opt/homebrew/bin/op"

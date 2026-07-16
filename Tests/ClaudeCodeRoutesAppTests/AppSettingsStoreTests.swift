@@ -15,9 +15,9 @@ struct AppSettingsStoreTests {
     let store = AppSettingsStore(defaults: defaults)
     let settings = store.load()
 
-    #expect(
-      settings.claudeCodeProxyPath == "/Users/testuser/.local/bin/claude-code-proxy"
-    )
+    let expectedProxyPath = FileManager.default.homeDirectoryForCurrentUser
+      .appendingPathComponent(".local/bin/claude-code-proxy").path
+    #expect(settings.claudeCodeProxyPath == expectedProxyPath)
     #expect(settings.claudeCodeProxyURL == "http://127.0.0.1:18765/")
     #expect(settings.mergeGatewayOnePasswordItem == "")
     #expect(settings.onePasswordExecutable == "/opt/homebrew/bin/op")

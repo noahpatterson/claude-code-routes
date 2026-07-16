@@ -4,7 +4,7 @@ import ProxyRuntime
 import SwiftUI
 
 private enum Constants {
-  static let defaultOnePasswordExecutable = "/opt/homebrew/bin/op"
+  static let defaultOnePasswordExecutable = AppSettings.default.onePasswordExecutable
   static let proxyReadyPollInterval: Duration = .seconds(1)
 }
 

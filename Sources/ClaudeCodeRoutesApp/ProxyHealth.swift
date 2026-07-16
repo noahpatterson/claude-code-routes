@@ -55,6 +55,7 @@ final class ProxyHealthChecker: ProxyHealthChecking {
       while !Task.isCancelled {
         let processUp = runtime.isHealthy
         let urlUp = await probe.isUp(url: proxyURL)
+        guard !Task.isCancelled else { break }
 
         let status = readinessChecker.observe(
           urlUp: urlUp, processUp: processUp)

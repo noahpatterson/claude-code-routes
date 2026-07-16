@@ -32,6 +32,19 @@ struct ProxyLaunchPlannerTests {
     #expect(secretReader.callCount == 1)
   }
 
+  @Test("blank MERGE_GATEWAY_API_KEY falls back to the secret reader")
+  func blankApiKeyFallsBackToSecretReader() throws {
+    let secretReader = FakeSecretReader()
+
+    let plan = try Self.makePlanner(secretReader: secretReader).plan(
+      settings: Self.makeSettings(),
+      environment: ["MERGE_GATEWAY_API_KEY": "   "]
+    )
+
+    #expect(plan.apiKey == "secret-reader-api-key")
+    #expect(secretReader.callCount == 1)
+  }
+
   @Test("CLAUDE_CODE_PROXY_PATH overrides the settings proxy path")
   func claudeCodeProxyPathOverridesDefault() throws {
     let secretReader = FakeSecretReader()

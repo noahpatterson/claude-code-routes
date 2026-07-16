@@ -7,9 +7,9 @@ enum ProxyStatus: Equatable {
 
   var isHealthy: Bool {
     switch self {
-    case .starting, .running:
+    case .running:
       return true
-    case .notReady, .stopped, .failed:
+    case .starting, .notReady, .stopped, .failed:
       return false
     }
   }
@@ -20,7 +20,7 @@ enum ProxyStatus: Equatable {
     case .running:
       return "Claude Code Proxy: running"
     case .notReady:
-      return "Claude Code Proxy: starting…"
+      return "Claude Code Proxy: not ready"
     case .stopped:
       return "Claude Code Proxy: stopped"
     case .failed(let message):
