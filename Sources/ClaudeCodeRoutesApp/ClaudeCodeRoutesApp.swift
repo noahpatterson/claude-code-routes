@@ -27,6 +27,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   private var signalSources: [DispatchSourceSignal] = []
   private var session: ProxySession?
   private var settingsPresenter: SettingsWindowPresenter?
+  private var proxyIsHealthy = false
+  private var proxyStatusMessage = "Claude Code Proxy: starting…"
+  private var codexAuthStatus: ProviderAuthStatus = .checking
   private let settingsStore = AppSettingsStore()
   private(set) lazy var settingsModel = SettingsModel(store: settingsStore)
 
@@ -36,6 +39,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     settingsModel.onSave = { [weak self] saved in
       self?.applySettings(saved, presentErrors: true)
+    }
+    settingsModel.onCodexAuthStatusChange = { [weak self] status in
+      self?.updateCodexAuthStatus(status)
+    }
+    settingsModel.onCodexCredentialsChanged = { [weak self] in
+      self?.restartProxyForChangedCodexCredentials()
     }
     settingsPresenter = SettingsWindowPresenter(model: settingsModel)
 
@@ -75,6 +84,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     )
     self.session = session
 
+    settingsModel.configureCodexAuth(
+      ProviderAuthStatusChecker(runner: FoundationProviderAuthCommandRunner())
+    )
     installStatusItem(healthy: false, statusMessage: "Claude Code Proxy: starting…")
     applySettings(settingsStore.load(), presentErrors: true)
   }
@@ -116,11 +128,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
   }
 
   private func updateStatusItem(healthy: Bool, statusMessage: String) {
+    proxyIsHealthy = healthy
+    proxyStatusMessage = statusMessage
     guard let item = statusItem else { return }
     item.button?.title = healthy ? "CCR ●" : "CCR ○"
 
     let menu = NSMenu()
     menu.addItem(NSMenuItem(title: statusMessage, action: nil, keyEquivalent: ""))
+    menu.addItem(NSMenuItem(title: codexAuthStatus.menuBarTitle, action: nil, keyEquivalent: ""))
     menu.addItem(NSMenuItem.separator())
     let settingsItem = NSMenuItem(
       title: "Settings…",
@@ -136,6 +151,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         keyEquivalent: "q")
     )
     item.menu = menu
+  }
+
+  private func updateCodexAuthStatus(_ status: ProviderAuthStatus) {
+    codexAuthStatus = status
+    updateStatusItem(healthy: proxyIsHealthy, statusMessage: proxyStatusMessage)
+  }
+
+  private func restartProxyForChangedCodexCredentials() {
+    session?.stop()
+    applySettings(settingsModel.current, presentErrors: false)
   }
 
   @objc private func openSettings() {
