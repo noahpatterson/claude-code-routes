@@ -1,0 +1,232 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Architecture review — claude-code-routes</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script type="module">
+      import mermaid from "https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.esm.min.mjs";
+      mermaid.initialize({ startOnLoad: true, theme: "neutral", securityLevel: "loose" });
+    </script>
+    <style>
+      .seam { stroke-dasharray: 4 4; }
+      .leak { stroke: #dc2626; }
+      .deep { background: linear-gradient(135deg, #0f172a, #1e293b); }
+      .schematic { min-height: 250px; }
+    </style>
+  </head>
+  <body class="bg-stone-50 text-slate-900 font-sans">
+    <main class="max-w-6xl mx-auto px-6 py-12 space-y-12">
+      <header class="space-y-5">
+        <div class="flex items-center justify-between gap-4">
+          <p class="text-xs uppercase tracking-[0.24em] text-indigo-700 font-semibold">Architecture review · 2026-07-16</p>
+          <span class="rounded-full bg-slate-900 text-white px-3 py-1 text-xs font-mono">claude-code-routes</span>
+        </div>
+        <h1 class="font-serif text-5xl tracking-tight">Where the code can get deeper</h1>
+        <p class="max-w-3xl text-slate-600">The current code has good seams around the proxy process, health probe, and provider auth. Four places still expose more implementation knowledge than callers need.</p>
+        <div class="flex flex-wrap gap-4 text-xs text-slate-600 items-center">
+          <span class="inline-flex items-center gap-2"><span class="h-4 w-4 border-2 border-slate-500 bg-white"></span> module</span>
+          <span class="inline-flex items-center gap-2"><span class="w-6 border-t-2 border-dashed border-slate-500"></span> seam</span>
+          <span class="inline-flex items-center gap-2"><span class="w-6 border-t-2 border-red-600"></span> leakage</span>
+          <span class="inline-flex items-center gap-2"><span class="h-4 w-4 bg-slate-900"></span> deep module</span>
+          <span class="rounded-full bg-slate-200 px-3 py-1">No CONTEXT.md glossary or ADRs beyond docs/adr/.gitkeep</span>
+        </div>
+      </header>
+
+      <section id="candidates" class="space-y-10">
+        <article id="command-execution" class="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+          <div class="p-7 space-y-6">
+            <div class="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <p class="text-xs uppercase tracking-wider text-indigo-700 font-semibold">Candidate 01 · process lifecycle</p>
+                <h2 class="font-serif text-3xl mt-2">Deepen command execution</h2>
+              </div>
+              <div class="flex gap-2"><span class="rounded-full bg-emerald-100 text-emerald-800 px-3 py-1 text-xs font-semibold">Strong</span><span class="rounded-full bg-slate-100 px-3 py-1 text-xs">local-substitutable</span></div>
+            </div>
+            <p class="font-mono text-sm text-slate-600">Sources/ClaudeCodeRoutesApp/CommandRunning.swift · ProviderAuthStatus.swift · OnePasswordSecretReader.swift</p>
+            <div class="grid md:grid-cols-2 gap-5">
+              <div class="rounded-xl border border-slate-200 p-4 schematic">
+                <p class="text-xs uppercase tracking-wider text-slate-500 mb-3">Before · duplicated adapters</p>
+                <pre class="mermaid">flowchart LR
+                  O[OnePasswordSecretReader] -. seam .-> C[FoundationCommandRunner]
+                  A[ProviderAuthStatusChecker] -. seam .-> P[FoundationProviderAuthCommandRunner]
+                  C --> CP[Process + pipes]
+                  P --> PP[Process + pipes]
+                  classDef leak stroke:#dc2626,stroke-width:2px;
+                  class CP,PP leak</pre>
+              </div>
+              <div class="rounded-xl border border-slate-200 p-4 schematic">
+                <p class="text-xs uppercase tracking-wider text-emerald-700 mb-3">After · one deep module</p>
+                <pre class="mermaid">flowchart LR
+                  O[OnePasswordSecretReader] -. seam .-> X[Command execution module]
+                  A[ProviderAuthStatusChecker] -. seam .-> X
+                  X --> P[Process lifecycle, output, exit status]
+                  classDef deep fill:#0f172a,color:#fff,stroke:#0f172a;
+                  class X deep</pre>
+              </div>
+            </div>
+            <div class="grid md:grid-cols-3 gap-6 text-sm">
+              <div><h3 class="font-semibold">Problem</h3><p class="mt-1 text-slate-600">Two adapters each know how to create, wait for, and drain a Foundation <code>Process</code>; fixes to lifecycle or pipe handling have no locality.</p></div>
+              <div><h3 class="font-semibold">Solution</h3><p class="mt-1 text-slate-600">Move process lifecycle and command outcomes behind one deep command execution module; keep 1Password and provider auth as callers at the seam.</p></div>
+              <div><h3 class="font-semibold">Benefits</h3><ul class="mt-1 list-disc list-inside text-slate-600"><li>locality: one process implementation</li><li>leverage: two callers, one fix</li><li>tests cross one seam</li></ul></div>
+            </div>
+            <p class="rounded-lg bg-emerald-50 border border-emerald-200 px-4 py-3 text-sm"><strong>Deletion test:</strong> deleting the second adapter does not make complexity disappear; it reappears as duplicated process code in the remaining callers. That is real depth to consolidate.</p>
+          </div>
+        </article>
+
+        <article id="settings-auth" class="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+          <div class="p-7 space-y-6">
+            <div class="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <p class="text-xs uppercase tracking-wider text-indigo-700 font-semibold">Candidate 02 · settings and provider auth</p>
+                <h2 class="font-serif text-3xl mt-2">Deepen the Settings/auth module</h2>
+              </div>
+              <div class="flex gap-2"><span class="rounded-full bg-amber-100 text-amber-800 px-3 py-1 text-xs font-semibold">Worth exploring</span><span class="rounded-full bg-slate-100 px-3 py-1 text-xs">in-process</span></div>
+            </div>
+            <p class="font-mono text-sm text-slate-600">SettingsView.swift · ClaudeCodeRoutesApp.swift · ProviderAuthStatus.swift</p>
+            <div class="grid md:grid-cols-2 gap-5">
+              <div class="rounded-xl border border-slate-200 p-4 schematic">
+                <p class="text-xs uppercase tracking-wider text-slate-500 mb-3">Before · callback leakage</p>
+                <pre class="mermaid">sequenceDiagram
+                  participant V as SettingsView
+                  participant M as SettingsModel
+                  participant A as AppDelegate
+                  participant C as ProviderAuthStatusChecker
+                  V->>M: login / logout
+                  M->>C: command + status
+                  C-->>M: status
+                  M-->>A: status callback
+                  M-->>A: credentials changed callback
+                  A->>M: current settings
+                  A->>A: stop + apply + rebuild menu</pre>
+              </div>
+              <div class="rounded-xl border border-slate-200 p-4 schematic">
+                <p class="text-xs uppercase tracking-wider text-emerald-700 mb-3">After · one auth module</p>
+                <pre class="mermaid">flowchart LR
+                  V[SettingsView] -. seam .-> X[Provider auth module]
+                  A[AppDelegate] -. status seam .-> X
+                  X --> C[command adapter]
+                  X --> R[credential-change restart]
+                  classDef deep fill:#0f172a,color:#fff,stroke:#0f172a;
+                  class X deep</pre>
+              </div>
+            </div>
+            <div class="grid md:grid-cols-3 gap-6 text-sm">
+              <div><h3 class="font-semibold">Problem</h3><p class="mt-1 text-slate-600">SettingsModel owns persistence, path resolution, async auth state, and callback choreography; AppDelegate owns the restart consequence.</p></div>
+              <div><h3 class="font-semibold">Solution</h3><p class="mt-1 text-slate-600">Concentrate auth action lifecycle, status, and credential-change behavior behind one deep module; callers observe state instead of coordinating callbacks.</p></div>
+              <div><h3 class="font-semibold">Benefits</h3><ul class="mt-1 list-disc list-inside text-slate-600"><li>locality: auth rules stay together</li><li>leverage: one state transition path</li><li>tests avoid UI choreography</li></ul></div>
+            </div>
+            <p class="rounded-lg bg-slate-50 border border-slate-200 px-4 py-3 text-sm"><strong>Deletion test:</strong> deleting the callbacks would not remove the work; it would scatter auth completion and restart rules across the view and AppDelegate.</p>
+          </div>
+        </article>
+
+        <article id="composition-root" class="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+          <div class="p-7 space-y-6">
+            <div class="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <p class="text-xs uppercase tracking-wider text-indigo-700 font-semibold">Candidate 03 · launch composition</p>
+                <h2 class="font-serif text-3xl mt-2">Deepen the proxy composition module</h2>
+              </div>
+              <div class="flex gap-2"><span class="rounded-full bg-amber-100 text-amber-800 px-3 py-1 text-xs font-semibold">Worth exploring</span><span class="rounded-full bg-slate-100 px-3 py-1 text-xs">in-process</span></div>
+            </div>
+            <p class="font-mono text-sm text-slate-600">ClaudeCodeRoutesApp.swift · ProxySession.swift · ProxyLaunchPlanner.swift · ProxyHealth.swift</p>
+            <div class="grid md:grid-cols-2 gap-5">
+              <div class="rounded-xl border border-slate-200 p-4 schematic">
+                <p class="text-xs uppercase tracking-wider text-slate-500 mb-3">Before · wide composition seam</p>
+                <pre class="mermaid">flowchart TB
+                  A[AppDelegate] --> E[executable resolver]
+                  A --> O[command runner]
+                  A --> P[planner factory]
+                  A --> H[health checker factory]
+                  A --> S[ProxySession]
+                  S --> E
+                  S --> H
+                  S --> R[ProxyRuntime]
+                  classDef leak stroke:#dc2626,stroke-width:2px;
+                  class A,E,O,P,H leak</pre>
+              </div>
+              <div class="rounded-xl border border-slate-200 p-4 schematic">
+                <p class="text-xs uppercase tracking-wider text-emerald-700 mb-3">After · deep composition</p>
+                <pre class="mermaid">flowchart LR
+                  A[AppDelegate] -. small seam .-> X[Proxy composition module]
+                  X --> P[planner]
+                  X --> H[health adapter]
+                  X --> R[ProxyRuntime]
+                  T[Tests] -. injection seam .-> X
+                  classDef deep fill:#0f172a,color:#fff,stroke:#0f172a;
+                  class X deep</pre>
+              </div>
+            </div>
+            <div class="grid md:grid-cols-3 gap-6 text-sm">
+              <div><h3 class="font-semibold">Problem</h3><p class="mt-1 text-slate-600">The documented launch contract is <code>ProxySession.apply</code>, but production construction still leaks resolver, runner, planner, and health adapter knowledge into AppDelegate.</p></div>
+              <div><h3 class="font-semibold">Solution</h3><p class="mt-1 text-slate-600">Add a production composition module that owns default adapters while retaining the narrow injected seam used by tests.</p></div>
+              <div><h3 class="font-semibold">Benefits</h3><ul class="mt-1 list-disc list-inside text-slate-600"><li>locality: launch wiring has one home</li><li>leverage: smaller app lifecycle</li><li>tests keep controlled adapters</li></ul></div>
+            </div>
+            <p class="rounded-lg bg-amber-50 border border-amber-200 px-4 py-3 text-sm"><strong>Existing design note:</strong> README already calls this an intermediate step and suggests a production factory; the friction is real enough to revisit that note.</p>
+          </div>
+        </article>
+
+        <article id="proxy-health" class="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+          <div class="p-7 space-y-6">
+            <div class="flex flex-wrap items-start justify-between gap-4">
+              <div>
+                <p class="text-xs uppercase tracking-wider text-indigo-700 font-semibold">Candidate 04 · readiness semantics</p>
+                <h2 class="font-serif text-3xl mt-2">Deepen proxy health and status</h2>
+              </div>
+              <div class="flex gap-2"><span class="rounded-full bg-emerald-100 text-emerald-800 px-3 py-1 text-xs font-semibold">Strong</span><span class="rounded-full bg-slate-100 px-3 py-1 text-xs">local-substitutable</span></div>
+            </div>
+            <p class="font-mono text-sm text-slate-600">ProxyHealth.swift · ProxyStatus.swift · ProxyHealthCheckerTests.swift · ProxyHealthReadinessTests.swift</p>
+            <div class="grid md:grid-cols-2 gap-5">
+              <div class="rounded-xl border border-slate-200 p-4 schematic">
+                <p class="text-xs uppercase tracking-wider text-slate-500 mb-3">Before · split semantics</p>
+                <pre class="mermaid">flowchart LR
+                  P[process liveness] --> R[ProxyReadiness]
+                  U[URL probe] --> R
+                  R --> S[ProxyStatus]
+                  S --> D[displayMessage]
+                  D --> M[menu bar]
+                  classDef leak stroke:#dc2626,stroke-width:2px;
+                  class S,D leak</pre>
+              </div>
+              <div class="rounded-xl border border-slate-200 p-4 schematic">
+                <p class="text-xs uppercase tracking-wider text-emerald-700 mb-3">After · deep health module</p>
+                <pre class="mermaid">flowchart LR
+                  P[process adapter] --> X[Proxy health module]
+                  U[probe adapter] --> X
+                  X --> M[menu/status consumer]
+                  X --> T[readiness tests]
+                  classDef deep fill:#0f172a,color:#fff,stroke:#0f172a;
+                  class X deep</pre>
+              </div>
+            </div>
+            <div class="grid md:grid-cols-3 gap-6 text-sm">
+              <div><h3 class="font-semibold">Problem</h3><p class="mt-1 text-slate-600">Readiness state and user-facing status text live in separate modules; <code>.notReady</code> currently displays “starting…”, so a lost-ready proxy is misreported.</p></div>
+              <div><h3 class="font-semibold">Solution</h3><p class="mt-1 text-slate-600">Let one deep health module own the readiness state, status text, and transition rules; keep process and probe as adapters at its seam.</p></div>
+              <div><h3 class="font-semibold">Benefits</h3><ul class="mt-1 list-disc list-inside text-slate-600"><li>locality: semantics and text agree</li><li>leverage: one status source</li><li>tests cover transitions once</li></ul></div>
+            </div>
+            <p class="rounded-lg bg-emerald-50 border border-emerald-200 px-4 py-3 text-sm"><strong>Concrete defect:</strong> fix the misleading “starting…” message even if the larger deepening is deferred.</p>
+          </div>
+        </article>
+      </section>
+
+      <section class="rounded-2xl border border-red-200 bg-red-50 p-7 space-y-4">
+        <p class="text-xs uppercase tracking-[0.24em] text-red-700 font-semibold">Concrete defect scan</p>
+        <h2 class="font-serif text-3xl">Safe fixes identified independently of candidate choice</h2>
+        <div class="grid md:grid-cols-2 gap-3 text-sm text-slate-700">
+          <p><strong>Configuration:</strong> blank <code>MERGE_GATEWAY_API_KEY</code> bypasses the 1Password fallback; the proxy path default is hard-coded to one user.</p>
+          <p><strong>Readiness:</strong> <code>.starting</code> is reported healthy before the URL responds, and <code>.notReady</code> is displayed as “starting…”.</p>
+          <p><strong>Cancellation:</strong> a probe result can return after health monitoring is canceled and publish a stale status.</p>
+          <p><strong>Architecture candidates below:</strong> the deeper refactors still need a deliberate seam choice.</p>
+        </div>
+      </section>
+
+      <section id="top-recommendation" class="rounded-2xl bg-slate-900 text-white p-8 shadow-xl">
+        <p class="text-xs uppercase tracking-[0.24em] text-indigo-300 font-semibold">Top recommendation</p>
+        <h2 class="font-serif text-4xl mt-3">Deepen command execution first</h2>
+        <p class="mt-4 max-w-3xl text-slate-300">It has the clearest deletion-test result and the highest leverage: two concrete adapters duplicate process lifecycle knowledge today. One deep module would improve locality without changing the proxy launch contract.</p>
+        <a href="#command-execution" class="inline-block mt-6 rounded-lg bg-indigo-400 px-4 py-2 text-sm font-semibold text-slate-950">Jump to candidate 01</a>
+      </section>
+    </main>
+  </body>
+</html>
