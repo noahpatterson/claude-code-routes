@@ -47,22 +47,6 @@ struct ProxyLaunchPlannerTests {
     #expect(plan.executableProxyPath != Self.fakeExecutablePath)
   }
 
-  @Test("ONE_PASSWORD_EXECUTABLE overrides the settings op path")
-  func onePasswordExecutableOverridesDefault() throws {
-    let secretReader = FakeSecretReader()
-    let onePasswordExecutable = createEmptyExecutableFile(suffix: "op")
-    let environment = [
-      "ONE_PASSWORD_EXECUTABLE": onePasswordExecutable.path
-    ]
-
-    _ = try Self.makePlanner(secretReader: secretReader).plan(
-      settings: Self.makeSettings(), environment: environment)
-
-    #expect(secretReader.callCount == 1)
-    #expect(secretReader.lastExecutable == onePasswordExecutable)
-    #expect(secretReader.lastExecutable != Self.fakeExecutablePath)
-  }
-
   @Test("non-executable proxy path throws")
   func nonExecutableProxyPathThrows() throws {
     let environment = [
@@ -70,20 +54,9 @@ struct ProxyLaunchPlannerTests {
     ]
 
     #expect(throws: ProxyLaunchPlannerError.proxyPathNotExecutable) {
-      try Self.makePlanner(secretReader: FakeSecretReader()).plan(
-        settings: Self.makeSettings(), environment: environment)
-    }
-  }
-
-  @Test("non-executable one password path throws")
-  func nonExecutableOnePasswordPathThrows() throws {
-    let environment = [
-      "ONE_PASSWORD_EXECUTABLE": Self.fakeNonExecutablePath.path
-    ]
-
-    #expect(throws: ProxyLaunchPlannerError.onePasswordExecutableNotExecutable) {
-      try Self.makePlanner(secretReader: FakeSecretReader()).plan(
-        settings: Self.makeSettings(), environment: environment)
+      try Self.makePlanner(secretReader: FakeSecretReader())
+        .plan(
+          settings: Self.makeSettings(), environment: environment)
     }
   }
 
@@ -98,7 +71,7 @@ struct ProxyLaunchPlannerTests {
     #expect(secretReader.callCount == 0)
   }
 
-  @Test("AppSettings supply planner path and onePassword defaults")
+  @Test("AppSettings supply planner path and secret reference")
   func appSettingsSupplyPlannerDefaults() throws {
     let secretReader = FakeSecretReader()
     let proxyPath = createEmptyExecutableFile(suffix: "from-settings")
@@ -111,7 +84,6 @@ struct ProxyLaunchPlannerTests {
       settings: settings, environment: [:])
 
     #expect(plan.executableProxyPath == proxyPath)
-    #expect(secretReader.lastExecutable == Self.fakeExecutablePath)
     #expect(secretReader.lastReference == "op://Personal/ITEM/KEY")
   }
 
@@ -149,7 +121,6 @@ struct ProxyLaunchPlannerTests {
     secretReader.apiKey = "planned-api-key"
 
     let plan = try ProxyLaunchPlanner(
-      defaultOnePasswordExecutable: createEmptyExecutableFile(suffix: "op"),
       secretReader: secretReader
     ).plan(settings: settings, environment: [:])
 
@@ -168,7 +139,6 @@ struct ProxyLaunchPlannerTests {
     )
 
     let planner = ProxyLaunchPlanner(
-      defaultOnePasswordExecutable: createEmptyExecutableFile(suffix: "op"),
       secretReader: FakeSecretReader()
     )
 
@@ -196,7 +166,6 @@ struct ProxyLaunchPlannerTests {
 
   private static func makePlanner(secretReader: FakeSecretReader) -> ProxyLaunchPlanner {
     ProxyLaunchPlanner(
-      defaultOnePasswordExecutable: Self.fakeExecutablePath,
       secretReader: secretReader
     )
   }
@@ -206,13 +175,11 @@ struct ProxyLaunchPlannerTests {
 final class FakeSecretReader: SecretReader, @unchecked Sendable {
   var apiKey: String = "secret-reader-api-key"
   var error: (any Error)?
-  private(set) var lastExecutable: URL?
   private(set) var lastReference: String?
   private(set) var callCount = 0
 
-  func read(executable: URL, reference: String) throws -> String {
+  func read(reference: String) throws -> String {
     callCount += 1
-    lastExecutable = executable
     lastReference = reference
     if let error {
       throw error

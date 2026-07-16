@@ -3,7 +3,7 @@ import ProxyRuntime
 
 @MainActor
 final class ProxySession {
-  private let planner: ProxyLaunchPlanner
+  private let makePlanner: (AppSettings, [String: String]) throws -> ProxyLaunchPlanner
   private let processRunner: any ProcessRunning
   private let probe: any HTTPProbe
   private let pollInterval: Duration
@@ -14,7 +14,7 @@ final class ProxySession {
   private var healthChecker: (any ProxyHealthChecking)?
 
   init(
-    planner: ProxyLaunchPlanner,
+    makePlanner: @escaping (AppSettings, [String: String]) throws -> ProxyLaunchPlanner,
     processRunner: any ProcessRunning,
     makeHealthChecker: @escaping (
       URL, any HTTPProbe, @escaping (ProxyStatus) -> Void
@@ -23,7 +23,7 @@ final class ProxySession {
     pollInterval: Duration,
     onStatusChange: @escaping (ProxyStatus) -> Void,
   ) {
-    self.planner = planner
+    self.makePlanner = makePlanner
     self.processRunner = processRunner
     self.makeHealthChecker = makeHealthChecker
     self.probe = probe
@@ -36,6 +36,7 @@ final class ProxySession {
     environment: [String: String]
   ) throws {
     // Plan first so invalid settings don't stop a healthy proxy.
+    let planner = try makePlanner(settings, environment)
     let plan = try planner.plan(
       settings: settings,
       environment: environment

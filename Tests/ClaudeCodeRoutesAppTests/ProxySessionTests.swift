@@ -14,10 +14,12 @@ struct ProxySessionTests {
     let second = createEmptyExecutableFile(suffix: "second")
     let runner = RecordingProcessRunner()
     let session = ProxySession(
-      planner: ProxyLaunchPlanner(
-        defaultOnePasswordExecutable: first,
-        secretReader: OnePasswordSecretReader(runner: FoundationCommandRunner())
-      ),
+      makePlanner: { _, _ in
+        ProxyLaunchPlanner(
+          secretReader: OnePasswordSecretReader(
+            runner: FoundationCommandRunner(), executable: first)
+        )
+      },
       processRunner: runner,
       makeHealthChecker: { url, _, onChange in
         FakeHealthChecker(proxyURL: url, onStatusChange: onChange)

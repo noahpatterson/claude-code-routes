@@ -39,14 +39,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
     settingsPresenter = SettingsWindowPresenter(model: settingsModel)
 
-    let planner = ProxyLaunchPlanner(
-      defaultOnePasswordExecutable: URL(
-        fileURLWithPath: Constants.defaultOnePasswordExecutable),
-      secretReader: OnePasswordSecretReader(runner: FoundationCommandRunner())
+    let executableResolver = OnePasswordExecutableResolver(
+      defaultExecutable: URL(fileURLWithPath: Constants.defaultOnePasswordExecutable)
     )
+    let commandRunner = FoundationCommandRunner()
 
     let session = ProxySession(
-      planner: planner,
+      makePlanner: { settings, environment in
+        let executable = try executableResolver.resolve(
+          settings: settings,
+          environment: environment
+        )
+        return ProxyLaunchPlanner(
+          secretReader: OnePasswordSecretReader(
+            runner: commandRunner,
+            executable: executable
+          )
+        )
+      },
       processRunner: FoundationProcessRunner(),
 
       makeHealthChecker: { url, probe, onChange in
