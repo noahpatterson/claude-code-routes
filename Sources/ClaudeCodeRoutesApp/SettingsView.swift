@@ -7,7 +7,7 @@ final class SettingsModel: ObservableObject {
   @Published var claudeCodeProxyPath: String
   @Published var claudeCodeProxyURL: String
   @Published var mergeGatewayOnePasswordItem: String
-
+  @Published var onePasswordExecutable: String
   private let store: AppSettingsStore
   var onSave: ((AppSettings) -> Void)?
 
@@ -17,13 +17,15 @@ final class SettingsModel: ObservableObject {
     self.claudeCodeProxyPath = loaded.claudeCodeProxyPath
     self.claudeCodeProxyURL = loaded.claudeCodeProxyURL
     self.mergeGatewayOnePasswordItem = loaded.mergeGatewayOnePasswordItem
+    self.onePasswordExecutable = loaded.onePasswordExecutable
   }
 
   var current: AppSettings {
     AppSettings(
       claudeCodeProxyPath: claudeCodeProxyPath,
       claudeCodeProxyURL: claudeCodeProxyURL,
-      mergeGatewayOnePasswordItem: mergeGatewayOnePasswordItem
+      mergeGatewayOnePasswordItem: mergeGatewayOnePasswordItem,
+      onePasswordExecutable: onePasswordExecutable
     )
   }
 
@@ -32,6 +34,7 @@ final class SettingsModel: ObservableObject {
     claudeCodeProxyPath = loaded.claudeCodeProxyPath
     claudeCodeProxyURL = loaded.claudeCodeProxyURL
     mergeGatewayOnePasswordItem = loaded.mergeGatewayOnePasswordItem
+    onePasswordExecutable = loaded.onePasswordExecutable
   }
 
   func save() {
@@ -52,6 +55,10 @@ struct SettingsView: View {
         "mergeGatewayOnePasswordItem",
         text: $model.mergeGatewayOnePasswordItem,
         prompt: Text("op://Personal/ITEM/KEY")
+      )
+      TextField(
+        "onePasswordExecutable",
+        text: $model.onePasswordExecutable,
       )
       Button("Save & Restart Proxy") {
         model.save()

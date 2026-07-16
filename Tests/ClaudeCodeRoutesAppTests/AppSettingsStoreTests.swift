@@ -20,6 +20,7 @@ struct AppSettingsStoreTests {
     )
     #expect(settings.claudeCodeProxyURL == "http://127.0.0.1:18765/")
     #expect(settings.mergeGatewayOnePasswordItem == "")
+    #expect(settings.onePasswordExecutable == "/opt/homebrew/bin/op")
   }
 
   @Test("save then load round-trips values across store instances")
@@ -31,7 +32,8 @@ struct AppSettingsStoreTests {
     let saved = AppSettings(
       claudeCodeProxyPath: "/custom/bin/claude-code-proxy",
       claudeCodeProxyURL: "http://127.0.0.1:9999/",
-      mergeGatewayOnePasswordItem: "op://Personal/ITEM/KEY"
+      mergeGatewayOnePasswordItem: "op://Personal/ITEM/KEY",
+      onePasswordExecutable: "/custom/bin/op"
     )
     AppSettingsStore(defaults: defaults).save(saved)
 

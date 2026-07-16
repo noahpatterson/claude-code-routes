@@ -4,11 +4,13 @@ struct AppSettings: Equatable, Sendable {
   var claudeCodeProxyPath: String
   var claudeCodeProxyURL: String
   var mergeGatewayOnePasswordItem: String
+  var onePasswordExecutable: String
 
   static let `default` = AppSettings(
     claudeCodeProxyPath: "/Users/testuser/.local/bin/claude-code-proxy",
     claudeCodeProxyURL: "http://127.0.0.1:18765/",
-    mergeGatewayOnePasswordItem: ""
+    mergeGatewayOnePasswordItem: "",
+    onePasswordExecutable: "/opt/homebrew/bin/op"
   )
 }
 
@@ -19,6 +21,7 @@ struct AppSettingsStore {
     static let claudeCodeProxyPath = "claudeCodeProxyPath"
     static let claudeCodeProxyURL = "claudeCodeProxyURL"
     static let mergeGatewayOnePasswordItem = "mergeGatewayOnePasswordItem"
+    static let onePasswordExecutable = "onePasswordExecutable"
   }
 
   init(defaults: UserDefaults = .standard) {
@@ -32,7 +35,9 @@ struct AppSettingsStore {
       claudeCodeProxyURL: string(forKey: Key.claudeCodeProxyURL)
         ?? AppSettings.default.claudeCodeProxyURL,
       mergeGatewayOnePasswordItem: string(forKey: Key.mergeGatewayOnePasswordItem)
-        ?? AppSettings.default.mergeGatewayOnePasswordItem
+        ?? AppSettings.default.mergeGatewayOnePasswordItem,
+      onePasswordExecutable: string(forKey: Key.onePasswordExecutable)
+        ?? AppSettings.default.onePasswordExecutable
     )
   }
 
@@ -41,6 +46,7 @@ struct AppSettingsStore {
     defaults.set(settings.claudeCodeProxyURL, forKey: Key.claudeCodeProxyURL)
     defaults.set(
       settings.mergeGatewayOnePasswordItem, forKey: Key.mergeGatewayOnePasswordItem)
+    defaults.set(settings.onePasswordExecutable, forKey: Key.onePasswordExecutable)
   }
 
   private func string(forKey key: String) -> String? {
