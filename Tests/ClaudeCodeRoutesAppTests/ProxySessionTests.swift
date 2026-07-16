@@ -105,7 +105,6 @@ final class RecordingProcessRunner: ProcessRunning, @unchecked Sendable {
 final class RecordingRunningProcess: RunningProcess {
   private let onTerminate: () -> Void
   private(set) var isRunning = true
-  let processIdentifier: Int32 = 1
 
   init(onTerminate: @escaping () -> Void) {
     self.onTerminate = onTerminate
