@@ -10,7 +10,7 @@ struct OnePasswordSecretReaderTests {
     let runner = FakeCommandRunner()
     runner.output = "secret-value"
     let executable = URL(fileURLWithPath: "/opt/homebrew/bin/op")
-    let reference = "op://Personal/Merge/apikey"
+    let reference = "op://Vault/Item/field"
     let reader = OnePasswordSecretReader(runner: runner, executable: executable)
 
     _ = try reader.read(reference: reference)

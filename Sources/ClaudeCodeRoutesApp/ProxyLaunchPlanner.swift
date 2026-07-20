@@ -18,7 +18,7 @@ enum ProxyLaunchPlannerError: Error, Equatable, LocalizedError {
     case .proxyPathNotExecutable:
       return "Proxy path is not executable"
     case .missingOnePasswordReference:
-      return "Set mergeGatewayOnePasswordItem (op://Personal/ITEM/KEY) or MERGE_GATEWAY_API_KEY"
+      return "Set mergeGatewayOnePasswordItem (op://Vault/Item/field) or MERGE_GATEWAY_API_KEY"
     }
   }
 }

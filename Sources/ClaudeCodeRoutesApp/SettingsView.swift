@@ -116,7 +116,7 @@ struct SettingsView: View {
       TextField(
         "mergeGatewayOnePasswordItem",
         text: $model.settings.mergeGatewayOnePasswordItem,
-        prompt: Text("op://Personal/ITEM/KEY")
+        prompt: Text("op://Vault/Item/field")
       )
       TextField(
         "onePasswordExecutable",

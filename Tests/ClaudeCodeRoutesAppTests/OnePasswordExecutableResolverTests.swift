@@ -43,7 +43,7 @@ struct OnePasswordExecutableResolverTests {
     let settings = AppSettings(
       claudeCodeProxyPath: "/bin/true",
       claudeCodeProxyURL: "http://127.0.0.1:18765/",
-      mergeGatewayOnePasswordItem: "op://Personal/ITEM/KEY",
+      mergeGatewayOnePasswordItem: "op://Vault/Item/field",
       onePasswordExecutable: ""
     )
 
@@ -74,7 +74,7 @@ struct OnePasswordExecutableResolverTests {
     AppSettings(
       claudeCodeProxyPath: "/bin/true",
       claudeCodeProxyURL: "http://127.0.0.1:18765/",
-      mergeGatewayOnePasswordItem: "op://Personal/ITEM/KEY",
+      mergeGatewayOnePasswordItem: "op://Vault/Item/field",
       onePasswordExecutable: executable.path
     )
   }

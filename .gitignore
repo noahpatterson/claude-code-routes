@@ -61,11 +61,21 @@ fastlane/Preview.html
 fastlane/screenshots/**/*.png
 fastlane/test_output
 
-# .env just in case
-# local env files
-.env*.local
+# Local env / secrets
 .env
+.env.*
+!.env.example
+*.pem
+*.p12
+*.mobileprovision
+credentials.json
+secrets/
+
+# Local Claude / editor agent state
+.claude/
+.cursor/
 
 # misc
 .DS_Store
-*.pem
+xcuserdata/
+*.xcuserstate

@@ -32,7 +32,7 @@ struct AppSettingsStoreTests {
     let saved = AppSettings(
       claudeCodeProxyPath: "/custom/bin/claude-code-proxy",
       claudeCodeProxyURL: "http://127.0.0.1:9999/",
-      mergeGatewayOnePasswordItem: "op://Personal/ITEM/KEY",
+      mergeGatewayOnePasswordItem: "op://Vault/Item/field",
       onePasswordExecutable: "/custom/bin/op"
     )
     AppSettingsStore(defaults: defaults).save(saved)

@@ -90,14 +90,14 @@ struct ProxyLaunchPlannerTests {
     let proxyPath = createEmptyExecutableFile(suffix: "from-settings")
     let settings = Self.makeSettings(
       proxyPath: proxyPath,
-      onePasswordReference: "op://Personal/ITEM/KEY"
+      onePasswordReference: "op://Vault/Item/field"
     )
 
     let plan = try Self.makePlanner(secretReader: secretReader).plan(
       settings: settings, environment: [:])
 
     #expect(plan.executableProxyPath == proxyPath)
-    #expect(secretReader.lastReference == "op://Personal/ITEM/KEY")
+    #expect(secretReader.lastReference == "op://Vault/Item/field")
   }
 
   @Test("secret reader failure propagates")
@@ -127,7 +127,7 @@ struct ProxyLaunchPlannerTests {
     let settings = AppSettings(
       claudeCodeProxyPath: proxyPath.path,
       claudeCodeProxyURL: "http://127.0.0.1:18765/",
-      mergeGatewayOnePasswordItem: "op://Personal/ITEM/KEY",
+      mergeGatewayOnePasswordItem: "op://Vault/Item/field",
       onePasswordExecutable: createEmptyExecutableFile(suffix: "settings-op").path
     )
     let secretReader = FakeSecretReader()
